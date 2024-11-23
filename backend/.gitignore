@@ -58,3 +58,4 @@ yolov8n.log
 /dataset
 /captured_images
 /runs
+/detection/models/yolo8n_model.pt
