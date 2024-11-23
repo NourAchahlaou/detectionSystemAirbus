@@ -1,0 +1,22 @@
+opencv-python 
+fastapi[all] 
+uvicorn
+passlib
+
+sqlalchemy 
+psycopg2-binary
+ultralytics==8.0.58
+opencv-contrib-python
+tensorflow
+tensorflow-cpu
+Pillow 
+PyYAML 
+
+numpy==1.24.2
+# //authentification
+pyjwt
+# "passlib[bcrypt]"
+
+mediapipe
+pytest
+pywin32

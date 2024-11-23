@@ -1,0 +1,60 @@
+# Python
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+*.env
+
+# Virtual environments
+venv/
+env/
+.venv/
+.virtualenv/
+
+# Logs
+*.log
+*.out
+*.err
+
+# Database files
+*.sqlite3
+*.db
+
+# Coverage reports
+htmlcov/
+.coverage
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# PyInstaller
+dist/
+build/
+*.spec
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Static files (optional)
+static/
+
+# Editor specific
+.idea/
+.vscode/
+*.swp
+*.swo
+
+capture_logs.log
+training_logs
+yolov8n.log
+/dataset
+/captured_images
+/runs
