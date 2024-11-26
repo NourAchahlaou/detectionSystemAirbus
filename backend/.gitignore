@@ -59,3 +59,4 @@ yolov8n.log
 /captured_images
 /runs
 /detection/models/yolo8n_model.pt
+/detection/test
