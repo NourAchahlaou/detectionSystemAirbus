@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import os
 
 # Load the trained YOLO model
-model = YOLO('backend/detection/models/test/yolo8n_D532.31953.pt')
+model = YOLO('backend/detection/test/yolo8n_D532.31953.pt')
 
 # Load the image
-image_path = 'D:/Professional Vault/Internship/my work/DefectDetection/backend/dataset/D532.31953/D532.31953/images/train/D532.31953.010.10/D532.31953.010.10_1.jpg'
+image_path = 'D:/Professional Vault/Internship/my work/Airbus/backend/dataset/Pieces/Pieces/images/train/D532.31953/D532.31953.010.10/D532.31953.010.10_3_rot135.jpg'
 image = cv2.imread(image_path)
 
 if image is None:
