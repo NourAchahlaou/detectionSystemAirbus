@@ -38,17 +38,19 @@ def load_my_model():
     
     # Adjust the model directory path
     model_dir = os.path.join(script_dir, '..', 'models')
-    model_path = os.path.join(model_dir, f'yolo8n_model.pt')
+    model_path = os.path.join(model_dir, 'yolo8n_model.pt')
 
     print(f"Script directory: {script_dir}")
     print(f"Model directory: {model_dir}")
     print(f"Model path: {model_path}")
 
+    # Check if the model file exists
     if not os.path.isfile(model_path):
-        raise FileNotFoundError(f"Model file not found at: {model_path}")
+        print(f"Model file not found at: {model_path}")
+        return None  # Return None or an appropriate placeholder if model is not found
 
-
+    # Load the model if the file exists
     my_path_model = YOLO(model_path)
 
-    print("Models loaded successfully.")
+    print("Model loaded successfully.")
     return my_path_model

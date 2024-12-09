@@ -7,7 +7,7 @@ class IdentifySystem:
     def __init__(self, confidence_threshold=0.5):
         self.confidence_threshold = confidence_threshold
         self.device = self.get_device()  # Get the device (CPU or GPU)
-        self.model = self.get_my_model()   # Dictionary to hold models loaded by label
+        self.model = None   # Dictionary to hold models loaded by label
         self.default_label = "all"  # Label for generic detection
 
     def get_device(self):
@@ -21,18 +21,26 @@ class IdentifySystem:
         
     def get_my_model(self):
         """Load the YOLO model based on available device."""
-        model = load_my_model()
-        if model is None:
+        
+        # If the model has already been loaded, return it
+        if self.model is not None:
+            return self.model
+
+        # Otherwise, try to load the model
+        self.model = load_my_model()
+
+        # If the model was not found, raise an HTTP exception
+        if self.model is None:
             raise HTTPException(status_code=404, detail="Model not found.")
 
         # Move model to the appropriate device
-        model.to(self.device)
+        self.model.to(self.device)
 
         # Convert to half precision if using a GPU
         if self.device.type == 'cuda':
-            model.half()  # Convert model to FP16
+            self.model.half()  # Convert model to FP16
 
-        return model
+        return self.model
 
 
     def detect_and_contour(self, frame):
