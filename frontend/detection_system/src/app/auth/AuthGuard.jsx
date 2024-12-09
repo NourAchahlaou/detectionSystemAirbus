@@ -16,7 +16,9 @@ export default function AuthGuard({ children }) {
   if (!user || user.role_id == null) {
     return <Navigate to="/signin" />;
   }
-  
+  else if (!token || !isAuthenticated) {
+    return <Navigate to="/signin" />;
+  }
   else if (isAuthenticated && token) {
     return <>{children}</>;
   }
