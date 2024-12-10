@@ -17,7 +17,11 @@ db_dependency = Annotated[Session, Depends(get_db)]
 
 @router.post("/auth")
 async def login (user_id:str,user_pwd:str,db : db_dependency):
-    return authenticate_user(db,user_id,user_pwd)
+    user =authenticate_user(db,user_id,user_pwd)
+    if not user:
+            raise HTTPException(status_code=400, detail="Incorrect username or password")
+    access_token = create_access_token(data={"sub": user.username})
+    return {"access_token": access_token, "token_type": "bearer"}
 
 @router.post("/logout")
 async def logout(current_user: Annotated[User, Depends(get_current_active_user)], db: Session = Depends(get_db)):

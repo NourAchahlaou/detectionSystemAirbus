@@ -6,6 +6,7 @@ from api.utils.database import get_db, initialize_roles
 from api.camera.routes import camera_routes
 
 from api.piece.routes import piece_routes
+from database.users.fake_admin import create_admin_user
 from database.inspection import InspectionImage
 from detection.router import detection_router,identify_router
 from oauth2 import oauth2_routes
@@ -39,7 +40,7 @@ InspectionImage.Base.metadata.create_all(bind=engine)
 @app.on_event("startup")
 async def startup_event():
     db = next(get_db())
-    
+    create_admin_user(db)
     frame_source.detect_and_save_cameras(db)
    
     external_camera.get_usb_devices()
