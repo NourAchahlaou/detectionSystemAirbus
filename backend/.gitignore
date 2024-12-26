@@ -54,7 +54,7 @@ static/
 
 capture_logs.log
 training_logs
-yolov8n.log
+yolov8l.log
 /dataset
 /captured_images
 /runs
