@@ -10,9 +10,9 @@ class CameraSettingsBase (BaseModel) :
     focus :float
     aperture :float
     gain : float
-    frame_rate : int
+   
     white_balance : float
-    resolution: str
+   
 
 class CameraSettingsCreate(CameraSettingsBase):
     pass
@@ -26,9 +26,8 @@ class UpdateCameraSettings(BaseModel):
     focus: Optional[float] = None
     aperture: Optional[float] = None
     gain: Optional[int] = None
-    frame_rate: Optional[int] = None
+    
     white_balance: Optional[str] = None
-    resolution: Optional[str] = None
 
     class Config:
         orm_mode = True
