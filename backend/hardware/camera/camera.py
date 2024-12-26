@@ -74,9 +74,8 @@ class FrameSource:
         focus = capture.get(cv2.CAP_PROP_FOCUS)
         aperture = capture.get(cv2.CAP_PROP_APERTURE)
         gain = capture.get(cv2.CAP_PROP_GAIN)
-        frame_rate = capture.get(cv2.CAP_PROP_FPS)
+        
         white_balance = capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U)
-        resolution = f"{int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))}"
 
         capture.release()
 
@@ -90,9 +89,8 @@ class FrameSource:
                 "focus": focus,
                 "aperture": aperture,
                 "gain": gain,
-                "frame_rate": frame_rate,
+                
                 "white_balance": white_balance,
-                "resolution": resolution
             }
         }
 
@@ -113,9 +111,8 @@ class FrameSource:
             focus=camera_info['settings']['focus'],
             aperture=camera_info['settings']['aperture'],
             gain=camera_info['settings']['gain'],
-            frame_rate=camera_info['settings']['frame_rate'],
+           
             white_balance=camera_info['settings']['white_balance'],
-            resolution=camera_info['settings']['resolution']
         )
 
         # Add settings to the database
@@ -346,8 +343,10 @@ class FrameSource:
         #     rotate_and_save_images_and_annotations(piece_label, rotation_angles=[90, 180, 270])
 
 
-        # Find the maximum class_data_id for the group
-        max_class_data_id = db.query(func.max(Piece.class_data_id)).filter(Piece.piece_label.like(f"{group_prefix}%")).scalar()
+        # Find the maximum class_data_id 
+        max_class_data_id = db.query(func.max(Piece.class_data_id)).scalar()
+        
+        
 
         if len(self.temp_photos) == 0:
             raise SystemError("There are no photos captured in the temp list.")
@@ -356,12 +355,19 @@ class FrameSource:
         piece = db.query(Piece).filter(Piece.piece_label == piece_label).first()
 
         if piece is None:
-            # If the piece doesn't exist, create a new one with the next class_data_id for its group
-            next_class_data_id = max_class_data_id + 1 if max_class_data_id is not None else 0
-            piece = Piece(piece_label=piece_label, nbre_img=0, class_data_id=next_class_data_id)
-            db.add(piece)
+            # If no piece exists, set class_data_id to 0; otherwise, increment max_class_data_id by 1
+            next_class_data_id = (max_class_data_id + 1) if max_class_data_id is not None else 0
+            
+            # Create a new piece with the determined class_data_id
+            piece = Piece(
+                piece_label=piece_label,
+                nbre_img=0,
+                class_data_id=next_class_data_id
+            )
+            db.add(piece) 
             db.commit()
             db.refresh(piece)
+
 
         # Iterate over the list of captured photos and save them to the database
         if len(self.temp_photos) == 10 and piece.nbre_img <= 10:
