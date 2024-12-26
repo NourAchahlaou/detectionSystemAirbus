@@ -1,3 +1,5 @@
 /docs
+/my_env
 /env
 training_logs.log
+/runs
