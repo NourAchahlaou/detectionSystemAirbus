@@ -52,6 +52,7 @@ export default function SidenavImageDisplay({ pieceLabel, onImageSelect, onFirst
         }
         const data = await response.json();
         setImages(data); 
+        console.log("data that was fetched ",data )
 
         if (data.length > 0 && onFirstImageLoad) {
           onFirstImageLoad(data[0].url); // Automatically select the first image if available
