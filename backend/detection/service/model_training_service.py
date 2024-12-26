@@ -24,7 +24,6 @@ stop_event = asyncio.Event()
 stop_sign = False
 
 async def stop_training():
-   
     stop_event.set()
     stop_sign == True 
     logger.info("Stop training signal sent.")
@@ -32,11 +31,14 @@ async def stop_training():
 def select_device():
     """Select the best available device (GPU if available, else CPU)."""
     if torch.cuda.is_available():
-        logger.info("GPU detected. Using CUDA.")
-        return torch.device('cuda')
+        device = torch.device('cuda')
+        logger.info(f"CUDA Device Detected: {torch.cuda.get_device_name(0)}")
+        return device
     else:
         logger.info("No GPU detected. Using CPU.")
         return torch.device('cpu')
+
+
 
 def adjust_batch_size(device, base_batch_size=8):
     """Adjust batch size based on the available device."""
@@ -84,6 +86,19 @@ def analyze_class_distribution(data_yaml_path):
     plt.savefig("class_distribution.png")
     plt.show()
 
+def adjust_imgsz(device):
+    """Adjust image size based on available GPU memory."""
+    if torch.cuda.is_available():
+        total_memory = torch.cuda.get_device_properties(0).total_memory
+        if total_memory > 8 * 1024**3:  # If GPU has more than 8GB of memory
+            return 1024  # Larger image size
+        elif total_memory >= 4 * 1024**3:  # If GPU has more than 4GB of memory
+            return 640  # Medium image size
+        else:
+            return 416  # Smaller image size
+    else:
+        return 320  # Default for CPU
+
 def train_model(group_label: str, db: Session):
     model = None
     try:
@@ -105,10 +120,10 @@ def train_model(group_label: str, db: Session):
         logger.info(f"Found annotated pieces in group: {group_label}")
 
         # Resolve paths
-        base_dir_data_yaml_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'dataset','Pieces'))
-        data_yaml_path = os.path.join(base_dir_data_yaml_path,'data.yaml')
+        base_dir_data_yaml_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'dataset', 'Pieces'))
+        data_yaml_path = os.path.join(base_dir_data_yaml_path, 'data.yaml')
         base_dir_model_save_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'detection'))
-        model_save_path = os.path.join(base_dir_model_save_path, 'models', 'yolo8n_model.pt')
+        model_save_path = os.path.join(base_dir_model_save_path, 'models', 'yolo8l_model.pt')
 
         # Log paths for debugging
         logger.info(f"Resolved data.yaml path: {data_yaml_path}")
@@ -134,17 +149,19 @@ def train_model(group_label: str, db: Session):
             model = YOLO(model_save_path)  # Load the pre-trained model for fine-tuning
         else:
             logger.info("No pre-existing model found. Starting training from scratch.")
-            model = YOLO("yolov8n.pt")  # Load a base YOLO model
+            model = YOLO("yolov8l.pt")  # Load a base YOLO model
 
         model.to(device)
         batch_size = adjust_batch_size(device)
+        imgsz = adjust_imgsz(device)
+        logger.info(f"Using image size: {imgsz}")
 
         logger.info(f"Starting fine-tuning for group: {group_label}")
         logger.info(f"Using device: {device}, Batch size: {batch_size}")
 
         # Fine-tuning loop with stop check
         for epoch in range(50):
-              # Fine-tune for additional epochs
+            # Fine-tune for additional epochs
             if stop_event.is_set() or stop_sign == True:
                 logger.info("Stop event detected. Ending training.")
                 break
@@ -152,15 +169,25 @@ def train_model(group_label: str, db: Session):
             # Perform one epoch of training
             model.train(data=data_yaml_path,
                         epochs=1,
-                        imgsz=640,
+                        imgsz=640,# Dynamically adjusted image size
                         batch=batch_size,
-                        device=device)
+                        device=device,
+                        amp=True)
+                    
 
             # Save model periodically (including fine-tuning progress)
             model.save(model_save_path)
             logger.info(f"Model saved to {model_save_path} after epoch {epoch + 1}")
 
         logger.info(f"Model fine-tuning complete. Final model saved to {model_save_path}")
+
+        # Update the `is_yolo_trained` field after training finishes (only once all epochs are done)
+        for piece in pieces:
+            piece.is_yolo_trained = True
+            logger.info(f"Piece {piece.piece_label} is now marked as YOLO trained.")
+
+        # Commit the changes to the database
+        db.commit()  # This saves the updates to the database
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")
