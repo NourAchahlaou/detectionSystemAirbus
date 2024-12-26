@@ -270,9 +270,9 @@ def save_annotations_to_db(db: Session, piece_label: str, save_folder: str):
             data_yaml = {
                 'names': {},
                 'nc': 0,
-                'val': os.path.join("D:\\Professional Vault\\Internship\\my work\\Airbus", "backend", "dataset","Pieces","Pieces","images","valid"),
-                'train': os.path.join("D:\\Professional Vault\\Internship\\my work\\Airbus", "backend", "dataset","Pieces","Pieces", "images", "train")
-                
+                'val': os.path.join("C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus", "backend", "dataset","Pieces","Pieces","images","valid"),
+                'train': os.path.join("C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus", "backend", "dataset","Pieces","Pieces", "images", "train")
+                # C:\Users\hp\Desktop\Airbus\detectionSystemAirbus
 
             }
             print("No existing data_yaml found. Creating new.")

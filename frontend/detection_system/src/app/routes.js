@@ -45,9 +45,9 @@ const routes = [
       { 
         path: "/databaseSetup/imageAnnotaion", 
         element: (
-          <RoleGuard allowedRoles={[1]}>
+          
             <AppDefectHandling />
-          </RoleGuard>
+         
         ) 
       },
       { 

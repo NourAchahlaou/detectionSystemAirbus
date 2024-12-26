@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 
 # Load the trained YOLO model
-model = YOLO('backend/detection/model/yolo8n_D532.31953.pt')
+model = YOLO('backend/detection/model/yolo8l_D532.31953.pt')
 
 # Load the image
 image_path = 'D:/Professional Vault/Internship/my work/DefectDetection/backend/dataset/D532.31953/D532.31953/images/train/D532.31953.012.10/D532.31953.012.10_1.jpg'

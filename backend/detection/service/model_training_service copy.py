@@ -169,7 +169,7 @@ def train_model(group_label: str, db: Session):
             # Perform one epoch of training
             model.train(data=data_yaml_path,
                         epochs=1,
-                        imgsz=640,# Dynamically adjusted image size
+                        imgsz=640,  # Dynamically adjusted image size
                         batch=batch_size,
                         device=device,
                         amp=True)
