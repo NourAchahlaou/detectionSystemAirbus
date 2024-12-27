@@ -95,11 +95,11 @@ export const AuthProvider = ({ children }) => {
     (async () => {
       try {
         const token = localStorage.getItem("token");
-        if (!token) {
+        if (!token) {add .
           dispatch({ type: "INIT", payload: { isAuthenticated: false, user: null } });
           return;
         }
-
+          //test
         // Try to fetch the user profile
         const { data } = await axios.get("http://127.0.0.1:8000/users/profile", {
           headers: {
