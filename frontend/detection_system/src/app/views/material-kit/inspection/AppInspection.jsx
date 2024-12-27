@@ -90,7 +90,7 @@ export default function AppInspection() {
   const [error, setError] = useState(null);
 
   // Retrieve the token from local storage
-  const token = localStorage.getItem('authToken');
+  const token = localStorage.getItem('token');
 
   // Move this useEffect before the conditional returns
   useEffect(() => {

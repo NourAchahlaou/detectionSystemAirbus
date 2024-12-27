@@ -143,7 +143,7 @@ const Layout1Topbar = () => {
 const handleLogout = async () => {
   try {
     // Retrieve the auth token
-    const token = localStorage.getItem('authToken');
+    const token = localStorage.getItem('token');
 
     // Call the backend logout endpoint
     const response = await axios.post(
@@ -159,7 +159,7 @@ const handleLogout = async () => {
     // Check if the logout was successful
     if (response.status === 200) {
       // Remove the auth token from localStorage
-      localStorage.removeItem('authToken');
+      localStorage.removeItem('token');
 
       // Optionally, call authLogout (if needed in your hook)
       authLogout();
@@ -179,7 +179,7 @@ const handleLogout = async () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const token = localStorage.getItem('authToken');
+  const token = localStorage.getItem('token');
 
   useEffect(() => {
     if (!token) {

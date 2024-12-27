@@ -5,7 +5,7 @@ const API_URL = "http://127.0.0.1:8000";
 
 const useAuth = () => {
   const [authState, setAuthState] = useState({
-    token: localStorage.getItem("authToken") || null,
+    token: localStorage.getItem("token") || null,
     error: null,
     loading: false,
   });
@@ -24,7 +24,7 @@ const useAuth = () => {
       console.log("Login response:", response);
       
       // Store token in localStorage and update authState
-      localStorage.setItem("authToken", access_token);
+      localStorage.setItem("token", access_token);
       setAuthState({ token: access_token, error: null, loading: false });
       
       return response.data; // Return the token data
@@ -36,7 +36,7 @@ const useAuth = () => {
   };
 
   const logout = () => {
-    localStorage.removeItem("authToken");
+    localStorage.removeItem("token");
     setAuthState({ token: null, error: null, loading: false });
   };
 

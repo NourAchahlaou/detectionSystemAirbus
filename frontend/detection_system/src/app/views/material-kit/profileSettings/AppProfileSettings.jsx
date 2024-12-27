@@ -195,7 +195,7 @@ function AdminUserSettings() {
   const [currentPage, setCurrentPage] = useState(1);
   const usersPerPage = 4;
 
-  const token = localStorage.getItem('authToken');
+  const token = localStorage.getItem('token');
 
   // Fetch users function
   const fetchUsers = useCallback(async () => {

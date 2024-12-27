@@ -70,7 +70,7 @@ export default function JwtLogin() {
       const { access_token } = data;
       if (access_token) {
         console.log("Access token received:", access_token);
-        localStorage.setItem("authToken", access_token); // Ensure the key matches
+        localStorage.setItem("token", access_token); // Ensure the key matches
         navigate("/profile&Settings/profile");
       } else {
         console.error("Access token is missing in the response");
