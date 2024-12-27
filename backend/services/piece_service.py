@@ -36,7 +36,12 @@ def get_images_of_piece(piece_label: str, db: Session):
         urlbase = "http://localhost:8000/images/"
         
         # Return the list of unannotated images with their URLs
-        return [{"url": urlbase + image.url.replace("\\", "/"), "name": image.id} for image in db_images]
+        try:
+            return [{"url": urlbase + image.url.replace("\\", "/"), "name": image.id} for image in db_images]
+        except Exception as e:
+            print(f"Error retrieving images: {e}")
+            return []
+
 
     print("Piece doesn't exist.")
     return []
