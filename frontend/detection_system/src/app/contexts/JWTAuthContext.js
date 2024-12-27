@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
       const { access_token } = response.data;
 
       // Store token
-      localStorage.setItem("token", access_token);
+      localStorage.setItem("authToken", access_token);
 
       // Fetch user profile
       const profileResponse = await axios.get("http://127.0.0.1:8000/users/profile", {
@@ -87,15 +87,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("authToken");
     dispatch({ type: "LOGOUT" });
   };
 
   useEffect(() => {
     (async () => {
       try {
-        const token = localStorage.getItem("token");
-        if (!token) {add .
+        const token = localStorage.getItem("authToken");
+        if (!token) {
           dispatch({ type: "INIT", payload: { isAuthenticated: false, user: null } });
           return;
         }
