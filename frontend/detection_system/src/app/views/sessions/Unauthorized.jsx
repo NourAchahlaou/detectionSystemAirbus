@@ -32,7 +32,7 @@ export default function Unauthorized() {
     <UnauthorizedRoot>
       <JustifyBox>
         <IMG src="/assets/images/illustrations/403.svg" alt="Unauthorized Access" />
-        <h2>You are not authorized to access this page.</h2>
+        <h2><center>You are not authorized to access this page.</center></h2>
         <Button
           color="primary"
           variant="contained"
