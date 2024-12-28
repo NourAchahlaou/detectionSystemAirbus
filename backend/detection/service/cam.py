@@ -3,55 +3,12 @@ import cv2
 import numpy as np
 from pypylon import pylon
 
-# Function to simulate zoom (crop and resize)
-def simulate_zoom(image, zoom_level):
-    h, w = image.shape[:2]
-    crop_size = (int(w / zoom_level), int(h / zoom_level))
-    x_start = (w - crop_size[0]) // 2
-    y_start = (h - crop_size[1]) // 2
-    cropped_img = image[y_start:y_start + crop_size[1], x_start:x_start + crop_size[0]]
-    zoomed_img = cv2.resize(cropped_img, (w, h))  # Resize back to original size
-    return zoomed_img
 
-# Initialize the camera
-camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
-
-# Open the camera
-camera.Open()
-
-# Set camera parameters
-camera.ExposureTime.SetValue(40000)  # Adjust exposure time
-camera.Gain.SetValue(0.8)  # Adjust gain
-camera.AcquisitionMode.SetValue("Continuous")
-
-# Start the grabbing process
-camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
-
-
-# Allow the camera to stabilize
-time.sleep(2)  # Give the camera time to prepare for image capture
-
-# Grab one image with a timeout of 5000 ms (5 seconds)
-grab_result = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-
-# Check if the image was grabbed successfully
-if grab_result.GrabSucceeded():
-    # If successful, get the image dimensions
-    print(f"Image grabbed successfully from Basler camera, width: {grab_result.GetWidth()} height: {grab_result.GetHeight()}")
-
-    # Convert the image to an OpenCV-compatible format (numpy array)
-    img = grab_result.Array
-
-    # Resize the image to fit the screen
-    max_width = 2450
-  # Maximum width for screen display
-    max_height = 600  # Maximum height for screen display
-    height, width = img.shape[:2]
-
-    # Calculate the aspect ratio
+# Function to resize an image while maintaining aspect ratio
+def resize_image(image, max_width, max_height):
+    height, width = image.shape[:2]
     aspect_ratio = width / height
 
-    # Calculate the new dimensions based on the screen size
     if width > height:
         new_width = min(max_width, width)
         new_height = int(new_width / aspect_ratio)
@@ -59,33 +16,79 @@ if grab_result.GrabSucceeded():
         new_height = min(max_height, height)
         new_width = int(new_height * aspect_ratio)
 
-    resized_img = cv2.resize(img, (new_width, new_height))
-
-    # Display the resized image
-    cv2.imshow("Resized Image", resized_img)
-    cv2.waitKey(0)  # Wait until a key is pressed
-
-    # Calculate the center region to crop
-    crop_size = (int(resized_img.shape[1] // 2), int(resized_img.shape[0] // 2))  # 50% of resized size
-    x_start = (resized_img.shape[1] - crop_size[0]) // 2
-    y_start = (resized_img.shape[0] - crop_size[1]) // 2
-
-    # Crop the center of the resized image
-    center_img = resized_img[y_start:y_start + crop_size[1], x_start:x_start + crop_size[0]]
-
-    # Display the cropped center image
-    cv2.imshow("Center Image", center_img)
-    cv2.waitKey(0)  # Wait until a key is pressed
+    return cv2.resize(image, (new_width, new_height))
 
 
+# Function to crop the center region of an image
+def crop_center(image, crop_width, crop_height):
+    h, w = image.shape[:2]
+    x_start = (w - crop_width) // 2
+    y_start = (h - crop_height) // 2
+    return image[y_start:y_start + crop_height, x_start:x_start + crop_width]
 
-else:
-    # If the image grab failed, print an error message
-    print("Failed to grab image from Basler camera")
 
-# Release the grab result and stop grabbing process
-grab_result.Release()
-camera.StopGrabbing()
+# Initialize and configure the camera
+def initialize_camera():
+    camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+    camera.Open()
+    camera.ExposureTime.SetValue(40000)
+    camera.Gain.SetValue(0.8)
+    camera.AcquisitionMode.SetValue("Continuous")
+    return camera
 
-# Close the camera
-camera.Close()
+
+def main():
+    # Initialize the camera
+    camera = initialize_camera()
+
+    # Print camera details
+    camera_info = camera.GetDeviceInfo()
+    print("Camera Details:")
+    print(f"  Model: {camera_info.GetModelName()}")
+    print(f"  Manufacturer: {camera_info.GetVendorName()}")
+    print(f"  Serial Number: {camera_info.GetSerialNumber()}")
+
+    # Start grabbing images
+    camera.StartGrabbing(pylon.GrabStrategy_LatestImageOnly)
+
+    try:
+        # Allow the camera to stabilize
+        time.sleep(2)
+
+        # Grab one image
+        grab_result = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+
+        if grab_result.GrabSucceeded():
+            print(f"\nImage grabbed successfully, width: {grab_result.GetWidth()}, height: {grab_result.GetHeight()}")
+
+            # Convert to OpenCV format
+            img = grab_result.Array
+
+            # Resize image for display
+            resized_img = resize_image(img, max_width=800, max_height=600)
+
+            # Display the resized image
+            cv2.imshow("Resized Image", resized_img)
+
+            # Crop the center of the resized image
+            center_img = crop_center(resized_img, crop_width=resized_img.shape[1] // 2,
+                                     crop_height=resized_img.shape[0] // 2)
+
+            # Display the cropped center image
+            cv2.imshow("Center Image", center_img)
+            cv2.waitKey(0)
+
+        else:
+            print("Failed to grab image from the camera.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+    finally:
+        # Cleanup
+        if grab_result:
+            grab_result.Release()
+        camera.StopGrabbing()
+        camera.Close()
+
+
+if __name__ == "__main__":
+    main()
