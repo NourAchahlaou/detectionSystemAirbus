@@ -1,5 +1,5 @@
 from typing import Dict, List
-import cv2
+
 import win32com.client
 
 def get_usb_devices() -> List[Dict[str, str]]:
