@@ -6,8 +6,6 @@ import threading
 import time
 import numpy as np
 
-from hardware.camera.external_camera import get_usb_devices
-
 
 # Function to resize an image while maintaining aspect ratio
 def resize_image(image, max_width, max_height):
@@ -22,6 +20,21 @@ def resize_image(image, max_width, max_height):
         new_width = int(new_height * aspect_ratio)
 
     return cv2.resize(image, (new_width, new_height))
+
+
+def get_usb_devices() -> List[Dict[str, str]]:
+    """Retrieve a list of USB devices that match the keyword 'Camera'."""
+    wmi = win32com.client.GetObject("winmgmts:")
+    devices = wmi.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE Caption LIKE '%Camera%'")
+    cameras = []
+
+    for device in devices:
+        cameras.append({
+            "Caption": device.Caption,
+            "DeviceID": device.DeviceID
+        })
+
+    return cameras
 
 
 def detect_camera_type(camera_caption: str) -> str:

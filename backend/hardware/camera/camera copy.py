@@ -1,15 +1,14 @@
 
 import os
 import threading
-from pypylon import pylon
+
 from sqlalchemy import func
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Tuple
 import cv2
 from fastapi import HTTPException
 
 from sqlalchemy.orm import Session
 from api.camera.models.camera_settings import UpdateCameraSettings
-from hardware.camera.basler_camera import detect_camera_type
 from database.piece.piece import Piece
 from database.piece.piece_image import PieceImage
 from hardware.camera.external_camera import get_usb_devices
@@ -43,67 +42,57 @@ class FrameSource:
         print(usb_cameras)
         available_cameras = []
 
-        # Detect Basler cameras
-        basler_devices = pylon.TlFactory.GetInstance().EnumerateDevices()
-        for device in basler_devices:
-            available_cameras.append({
-                "type": "basler",
-                "device": device,
-                "caption": device.GetModelName()
-            })
-
         for index, camera in enumerate(usb_cameras):
             # Use the index with cv2.VideoCapture
-            camera_type = detect_camera_type(camera["Caption"])
-            if camera_type == "opencv":
-                capture = cv2.VideoCapture(index)
-                if capture.isOpened():
-                    available_cameras.append(camera)
-                    print(f"Detected Camera: {camera['Caption']}")
+            capture = cv2.VideoCapture(index)
+            if capture.isOpened():
+                available_cameras.append(camera)
+                print(f"Detected Camera: {camera['Caption']}")
 
-                    camera_info = self.get_camera_info(index, camera['Caption'])
-                    if camera_info:
-                        print(camera_info)
-                        self.save_camera_info(db, camera_info)
+                camera_info = self.get_camera_info(index, camera['Caption'])
+                if camera_info:
+                    print(camera_info)
+                    self.save_camera_info(db, camera_info)
 
-                    capture.release()
-                else:
-                    print(f"Not detecting any camera at index {index}")
+                capture.release()
+            else:
+                print(f"Not detecting any camera at index {index}")
 
         return available_cameras
 
 
     @staticmethod
-    def get_camera_info(camera_index: int, model_name: str) -> Optional[Dict]:
-        try:
-            capture = cv2.VideoCapture(camera_index)
-            if not capture.isOpened():
-                raise ValueError(f"Failed to open camera with index {camera_index}")
-
-            # Getting camera settings
-            settings = {
-                "exposure": capture.get(cv2.CAP_PROP_EXPOSURE),
-                "contrast": capture.get(cv2.CAP_PROP_CONTRAST),
-                "brightness": capture.get(cv2.CAP_PROP_BRIGHTNESS),
-                "focus": capture.get(cv2.CAP_PROP_FOCUS),
-                "aperture": capture.get(cv2.CAP_PROP_APERTURE),
-                "gain": capture.get(cv2.CAP_PROP_GAIN),
-                "white_balance": capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-            }
-
-            return {
-                "camera_type": "regular",
-                "camera_index": camera_index,
-               
-                "model": model_name,
-                "settings": settings,
-            }
-        except Exception as e:
-            print(f"Error retrieving camera info: {e}")
+    def get_camera_info(camera_index: int, model_name: str) -> Dict:
+        capture = cv2.VideoCapture(camera_index)
+        if not capture.isOpened():
             return None
-        finally:
-            if 'capture' in locals() and capture.isOpened():
-                capture.release()
+
+        # Getting camera settings (example values)
+        exposure = capture.get(cv2.CAP_PROP_EXPOSURE)
+        contrast = capture.get(cv2.CAP_PROP_CONTRAST)
+        brightness = capture.get(cv2.CAP_PROP_BRIGHTNESS)
+        focus = capture.get(cv2.CAP_PROP_FOCUS)
+        aperture = capture.get(cv2.CAP_PROP_APERTURE)
+        gain = capture.get(cv2.CAP_PROP_GAIN)
+        
+        white_balance = capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U)
+
+        capture.release()
+
+        return {
+            "camera_index": camera_index,
+            "model": model_name,
+            "settings": {
+                "exposure": exposure,
+                "contrast": contrast,
+                "brightness": brightness,
+                "focus": focus,
+                "aperture": aperture,
+                "gain": gain,
+                
+                "white_balance": white_balance,
+            }
+        }
 
 
     @staticmethod
@@ -133,8 +122,7 @@ class FrameSource:
 
         # Create Camera object
         camera = Camera(
-            camera_type="regular",
-            camera_index=camera_info['camera_index'],       
+            camera_index=camera_info['camera_index'],
             model=camera_info['model'],
             status=False,
             settings_id=settings.id
@@ -149,7 +137,7 @@ class FrameSource:
         return camera
 
     def get_camera_by_index(self, camera_id, db: Session):
-       
+        # Query the database for the camera with the given ID
         return db.query(Camera).filter(Camera.id == camera_id).first()
 
     def get_camera_model_and_ids(self, db: Session) -> List[Tuple[int, str]]:

@@ -16,7 +16,7 @@ from database.users import session , user,role,profile
 from database.camera import camera_settings, camera
 from database.piece import piece,piece_image
 from fastapi.middleware.cors import CORSMiddleware
-from hardware.camera import external_camera
+from hardware.camera.external_camera import get_available_cameras
 
 
 
@@ -43,7 +43,10 @@ async def startup_event():
     create_admin_user(db)
     frame_source.detect_and_save_cameras(db)
    
-    external_camera.get_usb_devices()
+    cameras = get_available_cameras()
+    print("Available Cameras:")
+    for camera in cameras:
+        print(camera)
     initialize_roles(db)
 
 
