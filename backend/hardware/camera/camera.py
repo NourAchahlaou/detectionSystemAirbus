@@ -12,7 +12,7 @@ from api.camera.models.camera_settings import UpdateCameraSettings
 from hardware.camera.basler_camera import detect_camera_type
 from database.piece.piece import Piece
 from database.piece.piece_image import PieceImage
-from hardware.camera.external_camera import get_usb_devices
+from hardware.camera.external_camera import get_available_cameras, get_usb_devices
 from database.camera.camera_settings import CameraSettings
 from database.camera.camera import Camera
 from datetime import datetime
@@ -39,75 +39,119 @@ class FrameSource:
         return self.capture.isOpened()
 
     def detect_and_save_cameras(self, db: Session):
-        usb_cameras = get_usb_devices()
-        print(usb_cameras)
-        available_cameras = []
+        available_cameras = get_available_cameras()  # Use the updated function
+        print("Available Cameras:", available_cameras)
 
-        # Detect Basler cameras
-        basler_devices = pylon.TlFactory.GetInstance().EnumerateDevices()
-        for device in basler_devices:
-            available_cameras.append({
-                "type": "basler",
-                "device": device,
-                "caption": device.GetModelName()
-            })
+        for camera in available_cameras:
+            if camera['type'] == 'basler':
+                # Handle Basler camera
+                print(f"Detected Basler Camera: {camera['caption']}")
+                
+                # Assume `device` contains necessary Basler information
+                basler_info = {
+                    "type": "basler",
+                    "caption": camera['caption'],
+                    "device_details": str(camera['device'])  # Convert to string for saving if needed
+                }
+                # Pass the correct camera type and other details
+                camera_info = self.get_camera_info(camera_index=None,  # Basler cameras might not use index
+                                                    model_name=camera['caption'], 
+                                                    camera_type='basler', 
+                                                    device=camera['device'])
+                if camera_info:
+                    print(camera_info)
+                    self.save_camera_info(db, camera_info)
 
-        for index, camera in enumerate(usb_cameras):
-            # Use the index with cv2.VideoCapture
-            camera_type = detect_camera_type(camera["Caption"])
-            if camera_type == "opencv":
+            elif camera['type'] == 'opencv':
+                # Handle OpenCV-compatible camera
+                index = camera.get('index')
                 capture = cv2.VideoCapture(index)
-                if capture.isOpened():
-                    available_cameras.append(camera)
-                    print(f"Detected Camera: {camera['Caption']}")
 
-                    camera_info = self.get_camera_info(index, camera['Caption'])
+                if capture.isOpened():
+                    print(f"Detected OpenCV Camera: {camera['caption']}")
+
+                    # Pass the correct camera type
+                    camera_info = self.get_camera_info(camera_index=index, 
+                                                    model_name=camera['caption'], 
+                                                    camera_type='regular')
                     if camera_info:
                         print(camera_info)
                         self.save_camera_info(db, camera_info)
 
                     capture.release()
                 else:
-                    print(f"Not detecting any camera at index {index}")
+                    print(f"Failed to open OpenCV Camera at index {index}")
 
         return available_cameras
 
 
     @staticmethod
-    def get_camera_info(camera_index: int, model_name: str) -> Optional[Dict]:
+    def get_camera_info(camera_index: Optional[int], model_name: str, camera_type: str, device: Optional[pylon.DeviceInfo] = None) -> Optional[Dict]:
+        """
+        Retrieve camera settings based on the camera type (regular or Basler).
+        """
         try:
-            capture = cv2.VideoCapture(camera_index)
-            if not capture.isOpened():
-                raise ValueError(f"Failed to open camera with index {camera_index}")
+            if camera_type == "regular":
+                # For OpenCV-compatible cameras
+                capture = cv2.VideoCapture(camera_index)
+                if not capture.isOpened():
+                    raise ValueError(f"Failed to open camera with index {camera_index}")
 
-            # Getting camera settings
-            settings = {
-                "exposure": capture.get(cv2.CAP_PROP_EXPOSURE),
-                "contrast": capture.get(cv2.CAP_PROP_CONTRAST),
-                "brightness": capture.get(cv2.CAP_PROP_BRIGHTNESS),
-                "focus": capture.get(cv2.CAP_PROP_FOCUS),
-                "aperture": capture.get(cv2.CAP_PROP_APERTURE),
-                "gain": capture.get(cv2.CAP_PROP_GAIN),
-                "white_balance": capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-            }
+                # Getting camera settings
+                settings = {
+                    "exposure": capture.get(cv2.CAP_PROP_EXPOSURE),
+                    "contrast": capture.get(cv2.CAP_PROP_CONTRAST),
+                    "brightness": capture.get(cv2.CAP_PROP_BRIGHTNESS),
+                    "focus": capture.get(cv2.CAP_PROP_FOCUS),
+                    "aperture": capture.get(cv2.CAP_PROP_APERTURE),
+                    "gain": capture.get(cv2.CAP_PROP_GAIN),
+                    "white_balance": capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
+                }
+                return {
+                    "camera_type": "regular",
+                    "camera_index": camera_index,
+                    "model": model_name,
+                    "settings": settings,
+                }
 
-            return {
-                "camera_type": "regular",
-                "camera_index": camera_index,
-               
-                "model": model_name,
-                "settings": settings,
-            }
+            elif camera_type == "basler" and device:
+                # For Basler cameras
+                camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
+                camera.Open()
+
+                # Getting Basler camera settings
+                settings = {
+                    "exposure": camera.ExposureTimeAbs.GetValue() if camera.ExposureTimeAbs.IsReadable else None,
+                    "gain": camera.GainRaw.GetValue() if camera.GainRaw.IsReadable else None,
+                    "white_balance": camera.BalanceRatioAbs.GetValue() if camera.BalanceRatioAbs.IsReadable else None,
+                    # Add other Basler-specific settings if needed
+                }
+                camera.Close()
+                camera_info = camera.GetDeviceInfo()
+                return {
+                    "camera_type": "basler",
+                    "serial_number": camera_info.GetVendorName(),
+                    "model": model_name,
+                    "settings": settings,
+                }
+
+            else:
+                raise ValueError(f"Unsupported camera type: {camera_type}")
+
         except Exception as e:
-            print(f"Error retrieving camera info: {e}")
+            print(f"Error retrieving camera info for {camera_type} camera: {e}")
             return None
+
         finally:
             if 'capture' in locals() and capture.isOpened():
                 capture.release()
 
 
     @staticmethod
-    def save_camera_info(db: Session, camera_info:Dict):
+    def save_camera_info(db: Session, camera_info: Dict):
+        """
+        Save camera information into the database, handling both regular and Basler cameras.
+        """
         # Check if the camera already exists
         existing_camera = db.query(Camera).filter(Camera.model == camera_info['model']).first()
         if existing_camera:
@@ -116,14 +160,13 @@ class FrameSource:
 
         # Create CameraSettings object
         settings = CameraSettings(
-            exposure=camera_info['settings']['exposure'],
-            contrast=camera_info['settings']['contrast'],
-            brightness=camera_info['settings']['brightness'],
-            focus=camera_info['settings']['focus'],
-            aperture=camera_info['settings']['aperture'],
-            gain=camera_info['settings']['gain'],
-           
-            white_balance=camera_info['settings']['white_balance'],
+            exposure=camera_info['settings'].get('exposure'),
+            contrast=camera_info['settings'].get('contrast'),
+            brightness=camera_info['settings'].get('brightness'),
+            focus=camera_info['settings'].get('focus'),
+            aperture=camera_info['settings'].get('aperture'),
+            gain=camera_info['settings'].get('gain'),
+            white_balance=camera_info['settings'].get('white_balance'),
         )
 
         # Add settings to the database
@@ -133,8 +176,8 @@ class FrameSource:
 
         # Create Camera object
         camera = Camera(
-            camera_type="regular",
-            camera_index=camera_info['camera_index'],       
+            camera_type=camera_info['camera_type'],
+            camera_index=camera_info.get('camera_index'),  # Index for regular cameras
             model=camera_info['model'],
             status=False,
             settings_id=settings.id
@@ -142,11 +185,12 @@ class FrameSource:
 
         # Add camera to the database
         db.add(camera)
-        db.commit()
+        db.commit()   
         db.refresh(camera)
 
         print("Camera and settings registered successfully!")
         return camera
+
 
     def get_camera_by_index(self, camera_id, db: Session):
        

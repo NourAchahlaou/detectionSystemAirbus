@@ -6,7 +6,7 @@ import threading
 import time
 import numpy as np
 
-from hardware.camera.external_camera import get_usb_devices
+from hardware.camera.external_camera import get_available_cameras, get_usb_devices
 
 
 # Function to resize an image while maintaining aspect ratio
@@ -24,40 +24,6 @@ def resize_image(image, max_width, max_height):
     return cv2.resize(image, (new_width, new_height))
 
 
-def detect_camera_type(camera_caption: str) -> str:
-    """Detect the type of camera based on its caption."""
-    if "Basler" in camera_caption:
-        return "basler"
-    elif "Camera" in camera_caption or "USB" in camera_caption:
-        return "opencv"
-    return "unknown"
-
-
-def get_available_cameras() -> List[Dict]:
-    """Detect available cameras, including Basler and OpenCV-compatible cameras."""
-    usb_devices = get_usb_devices()
-    available_cameras = []
-
-    # Detect Basler cameras
-    basler_devices = pylon.TlFactory.GetInstance().EnumerateDevices()
-    for device in basler_devices:
-        available_cameras.append({
-            "type": "basler",
-            "device": device,
-            "caption": device.GetModelName()
-        })
-
-    # Detect OpenCV-compatible cameras
-    for index, camera in enumerate(usb_devices):
-        camera_type = detect_camera_type(camera["Caption"])
-        if camera_type == "opencv":
-            available_cameras.append({
-                "type": "opencv",
-                "index": index,
-                "caption": camera["Caption"]
-            })
-
-    return available_cameras
 
 
 def initialize_camera(basler_device):
@@ -70,14 +36,7 @@ def initialize_camera(basler_device):
     return camera
 
 
-def process_opencv_camera(camera, index):
-    """Capture and display frames from an OpenCV camera."""
-    while True:
-        ret, frame = camera.read()
-        if ret:
-            cv2.imshow(f"OpenCV Camera {index}", frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+
 
 
 def process_basler_camera(basler_device, caption):
