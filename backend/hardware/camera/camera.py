@@ -225,7 +225,8 @@ class FrameSource:
         return db.query(Camera.id, Camera.model).all()
     
 
-    def start(self, camera_id, db: Session ):
+
+    def start(self, camera_id, db: Session):
         if self.camera_is_running:
             print("Camera is already running.")
             return
@@ -238,11 +239,38 @@ class FrameSource:
         if camera is None:
             raise ValueError(f"No camera found with id {camera_id} in the database.")
         
-        # Start the camera using the fetched index or identifier
-        self.capture = cv2.VideoCapture(camera.camera_index)
-        if not self._check_camera():
-            raise SystemError(f"Camera with index {camera.camera_index} not working.")
+        # Check the camera type (regular or Basler)
+        if camera.camera_type == "regular":
+            # For regular cameras (OpenCV compatible)
+            self.capture = cv2.VideoCapture(camera.camera_index)
+            if not self._check_camera():
+                raise SystemError(f"Camera with index {camera.camera_index} not working.")
+            print(f"Camera with index {camera.camera_index} started successfully.")
+        
+        elif camera.type == "basler":
+            # For Basler cameras
+            try:
+                # Assuming camera.device_info is a pylon.DeviceInfo object from the database
+                device_info = pylon.DeviceInfo()
+                device_info.SetSerialNumber(camera.serial_number)  # or another identifier
 
+                # Create and open the Basler camera
+                camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device_info))
+                camera.Open()
+
+                # Check if the camera is working (e.g., by checking a simple property)
+                if camera.IsGrabbing():
+                    print(f"Basler camera with serial number {camera.GetDeviceInfo().GetSerialNumber()} started successfully.")
+                else:
+                    raise SystemError(f"Basler camera with serial number {camera.GetDeviceInfo().GetSerialNumber()} not working.")
+
+            except Exception as e:
+                raise SystemError(f"Failed to start Basler camera: {e}")
+
+        else:
+            raise ValueError(f"Unsupported camera type: {camera.type}")
+
+        # Mark the camera as running
         self.camera_is_running = True
         print(f"Camera with index {camera.camera_index} started successfully.")
    
