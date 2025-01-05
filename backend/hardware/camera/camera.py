@@ -9,10 +9,10 @@ from fastapi import HTTPException
 
 from sqlalchemy.orm import Session
 from api.camera.models.camera_settings import UpdateCameraSettings
-from hardware.camera.basler_camera import detect_camera_type
+
 from database.piece.piece import Piece
 from database.piece.piece_image import PieceImage
-from hardware.camera.external_camera import get_available_cameras, get_usb_devices
+from hardware.camera.external_camera import get_available_cameras
 from database.camera.camera_settings import CameraSettings
 from database.camera.camera import Camera
 from datetime import datetime
@@ -81,6 +81,7 @@ class FrameSource:
                     capture.release()
                 else:
                     print(f"Failed to open OpenCV Camera at index {index}")
+                    continue
 
         return available_cameras
 
@@ -88,7 +89,7 @@ class FrameSource:
     @staticmethod
     def get_camera_info(camera_index: Optional[int], model_name: str, camera_type: str, device: Optional[pylon.DeviceInfo] = None) -> Optional[Dict]:
         """
-        Retrieve camera settings based on the camera type (regular or Basler).
+        Retrieve or apply default camera settings based on the camera type (regular or Basler).
         """
         try:
             if camera_type == "regular":
@@ -119,18 +120,41 @@ class FrameSource:
                 camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
                 camera.Open()
 
-                # Getting Basler camera settings
+                # Get the camera's node map
+                node_map = camera.GetNodeMap()
+
+                # Apply default settings (no node checking)
+                print("Applying default settings for Basler camera...")
+                try:
+                    exposure_node = node_map.GetNode("ExposureTime")
+                    exposure_node.SetValue(40000)  # Default exposure time (in microseconds)
+
+                    gain_node = node_map.GetNode("Gain")
+                    gain_node.SetValue(0.8)  # Default gain
+
+                    acquisition_mode_node = node_map.GetNode("AcquisitionMode")
+                    acquisition_mode_node.SetValue("Continuous")  # Default acquisition mode
+                except Exception as e:
+                    print(f"Error applying default settings: {e}")
+
+                # Retrieve camera settings (matching OpenCV attributes)
                 settings = {
-                    "exposure": camera.ExposureTimeAbs.GetValue() if camera.ExposureTimeAbs.IsReadable else None,
-                    "gain": camera.GainRaw.GetValue() if camera.GainRaw.IsReadable else None,
-                    "white_balance": camera.BalanceRatioAbs.GetValue() if camera.BalanceRatioAbs.IsReadable else None,
-                    # Add other Basler-specific settings if needed
+                    "exposure": 40000,  # Use default set value for ExposureTime
+                    "contrast": None,  # Basler cameras don't support contrast directly
+                    "brightness": None,  # Basler cameras don't support brightness directly
+                    "focus": None,  # Basler cameras may not support manual focus
+                    "aperture": None,  # Basler cameras may not support aperture control
+                    "gain": 0.8,  # Use default set value for Gain
+                    "white_balance": None,  # Basler cameras may not support white_balance directly
                 }
-                camera.Close()
+
+                # Retrieve camera information
                 camera_info = camera.GetDeviceInfo()
+                camera.Close()
+
                 return {
                     "camera_type": "basler",
-                    "serial_number": camera_info.GetVendorName(),
+                    "serial_number": camera_info.GetSerialNumber(),
                     "model": model_name,
                     "settings": settings,
                 }

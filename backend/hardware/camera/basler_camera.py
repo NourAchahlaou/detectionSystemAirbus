@@ -76,6 +76,51 @@ def process_basler_camera(basler_device, caption):
         camera.StopGrabbing()
         camera.Close()
 
+def configure_basler_camera(device, model_name):
+    """
+    Configure a Basler camera with default settings.
+    """
+    try:
+        # Create and open the Basler camera
+        camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
+        camera.Open()
+
+        # Get the camera's node map
+        node_map = camera.GetNodeMap()
+
+        # Apply default settings
+        print("Applying default settings...")
+        exposure_node = node_map.GetNode("ExposureTime")
+        if exposure_node and exposure_node.IsWritable():
+            exposure_node.SetValue(40000)  # Default exposure time (in microseconds)
+
+        gain_node = node_map.GetNode("Gain")
+        if gain_node and gain_node.IsWritable():
+            gain_node.SetValue(0.8)  # Default gain
+
+        acquisition_mode_node = node_map.GetNode("AcquisitionMode")
+        if acquisition_mode_node and acquisition_mode_node.IsWritable():
+            acquisition_mode_node.SetValue("Continuous")  # Set acquisition mode to continuous
+
+        # Retrieve and return camera information
+        camera_info = camera.GetDeviceInfo()
+        camera.Close()
+
+        return {
+            "camera_type": "basler",
+            "serial_number": camera_info.GetSerialNumber(),
+            "model": model_name,
+            "settings": {
+                "exposure": 40000,
+                "gain": 0.8,
+                "acquisition_mode": "Continuous",
+            },
+        }
+
+    except Exception as e:
+        print(f"Error configuring Basler camera: {e}")
+        return None
+
 
 # Main Logic
 if __name__ == "__main__":
