@@ -30,7 +30,7 @@ class FrameSource:
         self.capture = None
         self.detection_service = None
         self.temp_photos = []  # To keep track of temporary photos
-        
+        self.basler_camera = None
         self.confidence_threshold = 0.5  # Set the confidence threshold
     # Reset virtual_storage whenever needed
 
@@ -54,7 +54,8 @@ class FrameSource:
                     "device_details": str(camera['device'])  # Convert to string for saving if needed
                 }
                 # Pass the correct camera type and other details
-                camera_info = self.get_camera_info(camera_index=None,  # Basler cameras might not use index
+                camera_info = self.get_camera_info(camera_index=None,
+                                                   serial_number=None,  # Basler cameras might not use index
                                                     model_name=camera['caption'], 
                                                     camera_type='basler', 
                                                     device=camera['device'])
@@ -72,6 +73,7 @@ class FrameSource:
 
                     # Pass the correct camera type
                     camera_info = self.get_camera_info(camera_index=index, 
+                                                       serial_number=None,
                                                     model_name=camera['caption'], 
                                                     camera_type='regular')
                     if camera_info:
@@ -87,7 +89,7 @@ class FrameSource:
 
 
     @staticmethod
-    def get_camera_info(camera_index: Optional[int], model_name: str, camera_type: str, device: Optional[pylon.DeviceInfo] = None) -> Optional[Dict]:
+    def get_camera_info(camera_index: Optional[int],serial_number:Optional[str], model_name: str, camera_type: str, device: Optional[pylon.DeviceInfo] = None) -> Optional[Dict]:
         """
         Retrieve or apply default camera settings based on the camera type (regular or Basler).
         """
@@ -120,45 +122,45 @@ class FrameSource:
                 camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
                 camera.Open()
 
-                # Get the camera's node map
-                node_map = camera.GetNodeMap()
-
-                # Apply default settings (no node checking)
-                print("Applying default settings for Basler camera...")
                 try:
+                    # Get the camera's node map and apply settings
+                    node_map = camera.GetNodeMap()
+                    print("Applying default settings for Basler camera...")
                     exposure_node = node_map.GetNode("ExposureTime")
-                    exposure_node.SetValue(40000)  # Default exposure time (in microseconds)
-
+                    exposure_node.SetValue(40000)
                     gain_node = node_map.GetNode("Gain")
-                    gain_node.SetValue(0.8)  # Default gain
-
+                    gain_node.SetValue(0.8)
                     acquisition_mode_node = node_map.GetNode("AcquisitionMode")
-                    acquisition_mode_node.SetValue("Continuous")  # Default acquisition mode
+                    acquisition_mode_node.SetValue("Continuous")
+
+                    # Retrieve camera settings
+                    settings = {
+                        "exposure": 40000,
+                        "contrast": None,
+                        "brightness": None,
+                        "focus": None,
+                        "aperture": None,
+                        "gain": 0.8,
+                        "white_balance": None,
+                    }
+
+                    # Retrieve camera information
+                    camera_info = camera.GetDeviceInfo()
+                    serial_number = camera_info.GetSerialNumber() if camera_info.GetSerialNumber() else "unknown"
+
+                    return {
+                        "camera_type": "basler",
+                        "serial_number": serial_number,
+                        "model": model_name,
+                        "settings": settings,
+                    }
+
                 except Exception as e:
-                    print(f"Error applying default settings: {e}")
+                    print(f"Error retrieving camera info for Basler camera: {e}")
+                    return None
 
-                # Retrieve camera settings (matching OpenCV attributes)
-                settings = {
-                    "exposure": 40000,  # Use default set value for ExposureTime
-                    "contrast": None,  # Basler cameras don't support contrast directly
-                    "brightness": None,  # Basler cameras don't support brightness directly
-                    "focus": None,  # Basler cameras may not support manual focus
-                    "aperture": None,  # Basler cameras may not support aperture control
-                    "gain": 0.8,  # Use default set value for Gain
-                    "white_balance": None,  # Basler cameras may not support white_balance directly
-                }
-
-                # Retrieve camera information
-                camera_info = camera.GetDeviceInfo()
-                camera.Close()
-
-                return {
-                    "camera_type": "basler",
-                    "serial_number": camera_info.GetSerialNumber(),
-                    "model": model_name,
-                    "settings": settings,
-                }
-
+                finally:
+                    camera.Close()
             else:
                 raise ValueError(f"Unsupported camera type: {camera_type}")
 
@@ -173,13 +175,12 @@ class FrameSource:
 
     @staticmethod
     def save_camera_info(db: Session, camera_info: Dict):
-        """
-        Save camera information into the database, handling both regular and Basler cameras.
-        """
-        # Check if the camera already exists
-        existing_camera = db.query(Camera).filter(Camera.model == camera_info['model']).first()
+        # Check if serial_number exists in camera_info
+        serial_number = camera_info.get('serial_number', 'Unknown')
+
+        existing_camera = db.query(Camera).filter(Camera.serial_number == serial_number).first()
         if existing_camera:
-            print("Camera already registered.")
+            print(f"Camera with serial number {serial_number} already registered.")
             return existing_camera
 
         # Create CameraSettings object
@@ -192,8 +193,6 @@ class FrameSource:
             gain=camera_info['settings'].get('gain'),
             white_balance=camera_info['settings'].get('white_balance'),
         )
-
-        # Add settings to the database
         db.add(settings)
         db.commit()
         db.refresh(settings)
@@ -201,20 +200,18 @@ class FrameSource:
         # Create Camera object
         camera = Camera(
             camera_type=camera_info['camera_type'],
-            camera_index=camera_info.get('camera_index'),  # Index for regular cameras
+            camera_index=camera_info.get('camera_index'),
+            serial_number=serial_number,
             model=camera_info['model'],
             status=False,
-            settings_id=settings.id
+            settings_id=settings.id,
         )
-
-        # Add camera to the database
         db.add(camera)
-        db.commit()   
+        db.commit()
         db.refresh(camera)
 
-        print("Camera and settings registered successfully!")
+        print(f"Camera with serial number {serial_number} registered successfully!")
         return camera
-
 
     def get_camera_by_index(self, camera_id, db: Session):
        
@@ -238,7 +235,7 @@ class FrameSource:
         camera = self.get_camera_by_index(camera_id, db)
         if camera is None:
             raise ValueError(f"No camera found with id {camera_id} in the database.")
-        
+
         # Check the camera type (regular or Basler)
         if camera.camera_type == "regular":
             # For regular cameras (OpenCV compatible)
@@ -246,69 +243,98 @@ class FrameSource:
             if not self._check_camera():
                 raise SystemError(f"Camera with index {camera.camera_index} not working.")
             print(f"Camera with index {camera.camera_index} started successfully.")
-        
-        elif camera.type == "basler":
+
+        elif camera.camera_type == "basler":
             # For Basler cameras
+            print(f"Attempting to start Basler camera with serial number: {camera.serial_number}")
+
             try:
-                # Assuming camera.device_info is a pylon.DeviceInfo object from the database
                 device_info = pylon.DeviceInfo()
-                device_info.SetSerialNumber(camera.serial_number)  # or another identifier
+                serial_number = str(camera.serial_number)  # Convert serial_number to string
+                device_info.SetSerialNumber(serial_number)  # Set serial number
 
                 # Create and open the Basler camera
-                camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device_info))
-                camera.Open()
+                self.basler_camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device_info))
+                self.basler_camera.Open()
 
-                # Check if the camera is working (e.g., by checking a simple property)
-                if camera.IsGrabbing():
-                    print(f"Basler camera with serial number {camera.GetDeviceInfo().GetSerialNumber()} started successfully.")
+                print("Basler camera opened successfully.")
+
+                # Check if the camera is grabbing frames
+                if not self.basler_camera.IsGrabbing():
+                    print("Starting camera grabbing...")
+                    self.basler_camera.StartGrabbing()
+                    print("Camera grabbing started.")
                 else:
-                    raise SystemError(f"Basler camera with serial number {camera.GetDeviceInfo().GetSerialNumber()} not working.")
+                    print("Camera is already grabbing.")
 
             except Exception as e:
                 raise SystemError(f"Failed to start Basler camera: {e}")
 
         else:
-            raise ValueError(f"Unsupported camera type: {camera.type}")
+            raise ValueError(f"Unsupported camera type: {camera.camera_type}")
 
         # Mark the camera as running
         self.camera_is_running = True
-        print(f"Camera with index {camera.camera_index} started successfully.")
+        print(f"Camera with ID {camera_id} started successfully.")
+
+
    
- # Event to signal when to stop
     def stopInspection(self):
         if not self.camera_is_running:
             print("Camera is not running.")
             return
 
+        # Stop regular OpenCV camera (if applicable)
         if self.capture is not None:
             self.capture.release()
             self.capture = None
+            print("Regular OpenCV camera stopped.")
+
+        # Stop Basler camera (if applicable)
+        if self.basler_camera is not None:
+            try:
+                self.basler_camera.StopGrabbing()
+                self.basler_camera.Close()  # Close the Basler camera to release resources
+                self.basler_camera = None
+                print("Basler camera stopped and resources released.")
+            except Exception as e:
+                print(f"Error stopping Basler camera: {e}")
 
         self.camera_is_running = False
+        print("Camera stopped and resources released.")
 
-    #     # Set the global stop_event to signal stop
+        # If using stop_event for threading purposes
         if 'stop_event' in globals():
             stop_event.set()
-
-    print("Camera stopped and resources released.")
 
     def stop(self):
         if not self.camera_is_running:
             print("Camera is not running.")
             return
 
+        # Stop regular OpenCV camera (if applicable)
         if self.capture is not None:
             self.capture.release()
             self.capture = None
+            print("Regular OpenCV camera stopped.")
+
+        # Stop Basler camera (if applicable)
+        if self.basler_camera is not None:
+            try:
+                self.basler_camera.StopGrabbing()
+                self.basler_camera.Close()  # Close the Basler camera to release resources
+                self.basler_camera = None
+                print("Basler camera stopped and resources released.")
+            except Exception as e:
+                print(f"Error stopping Basler camera: {e}")
 
         self.camera_is_running = False
-        stop_event = threading.Event() 
-        
-
-      
-        # Set the event to signal stop
-        stop_event.set()  
         print("Camera stopped and resources released.")
+
+        # Set the event to signal stop
+        stop_event = threading.Event() 
+        stop_event.set()
+        print("Stop event triggered.")
 
 
 
