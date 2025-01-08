@@ -62,7 +62,7 @@ def get_camera_info(camera_id: int , db: db_dependency):
 async def change_camera_settings(camera_id: int, camera_settings_update: UpdateCameraSettings, db: db_dependency):
     return FrameSource.change_camera_settings(camera_id, camera_settings_update, db)
 
-
+#didn't use this :
 @router.get("/frame/{piece_label}")
 async def get_frame(db: db_dependency, piece_label: str):
     if not frame_source.camera_is_running:

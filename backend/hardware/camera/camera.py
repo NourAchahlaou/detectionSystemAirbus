@@ -31,7 +31,11 @@ class FrameSource:
         self.detection_service = None
         self.temp_photos = []  # To keep track of temporary photos
         self.basler_camera = None
+        self.type= None
         self.confidence_threshold = 0.5  # Set the confidence threshold
+        self.converter = pylon.ImageFormatConverter()
+        self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
+        self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
     # Reset virtual_storage whenever needed
 
 
@@ -242,6 +246,7 @@ class FrameSource:
             self.capture = cv2.VideoCapture(camera.camera_index)
             if not self._check_camera():
                 raise SystemError(f"Camera with index {camera.camera_index} not working.")
+            self.type = "regular"
             print(f"Camera with index {camera.camera_index} started successfully.")
 
         elif camera.camera_type == "basler":
@@ -256,7 +261,10 @@ class FrameSource:
                 # Create and open the Basler camera
                 self.basler_camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device_info))
                 self.basler_camera.Open()
-
+                self.converter = pylon.ImageFormatConverter()
+                self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
+                self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
+                self.type = "basler"
                 print("Basler camera opened successfully.")
 
                 # Check if the camera is grabbing frames
@@ -301,6 +309,7 @@ class FrameSource:
                 print(f"Error stopping Basler camera: {e}")
 
         self.camera_is_running = False
+        self.type =None
         print("Camera stopped and resources released.")
 
         # If using stop_event for threading purposes
@@ -329,6 +338,7 @@ class FrameSource:
                 print(f"Error stopping Basler camera: {e}")
 
         self.camera_is_running = False
+        self.type = None
         print("Camera stopped and resources released.")
 
         # Set the event to signal stop
@@ -350,17 +360,33 @@ class FrameSource:
     def generate_frames(self) -> Generator[bytes, None, None]:
         assert self.camera_is_running, "Start the camera first by calling the start() method"
         while self.camera_is_running:
-            success, frame = self.capture.read()
-            if not success:
-                break
-            _, buffer = cv2.imencode('.jpg', frame)
-            frame_bytes = buffer.tobytes()
-            yield (b'--frame\r\n'
-                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            if self.type == "regular":
+                success, frame = self.capture.read()
+                if not success:
+                    break
+                _, buffer = cv2.imencode('.jpg', frame)
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+            elif self.type == "basler":
+                if not hasattr(self, 'converter'):
+                    raise AttributeError("Converter is not initialized for Basler camera")
+                print("Generating Basler camera frames ...")
+                if self.basler_camera and self.basler_camera.IsGrabbing():
+                    grab_result = self.basler_camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+                    if grab_result.GrabSucceeded():
+                        image = self.converter.Convert(grab_result)
+                        frame = image.GetArray()
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        yield (b'--frame\r\n'
+                            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                    grab_result.Release()
+                else:
+                    break
     
     
 # !TODO : change the timestamps into a counter 
-
+#didn't use this 
     def next_frame(self, db: Session, save_folder: str, url: str, piece_label: str):
         assert self.camera_is_running, "Start the camera first by calling the start() method"
 
@@ -418,7 +444,7 @@ class FrameSource:
         print("Photo of the piece is registered successfully!")
         return frame
     
-
+#instead of next_frame i used this 
     def capture_images(self, save_folder: str, url: str, piece_label: str):
         assert self.camera_is_running, "Start the camera first by calling the start() method"
         success, frame = self.capture.read()
