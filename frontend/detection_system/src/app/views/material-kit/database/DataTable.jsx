@@ -88,7 +88,7 @@ export default function DataTable() {
   const [trainingInProgress, setTrainingInProgress] = useState(null);
   const [progress, setProgress] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
-  const [currentGroupLabel, setCurrentGroupLabel] = useState("");
+  const [currentPieceLabel, setCurrentPieceLabel] = useState("");
   const [selectedDatasets, setSelectedDatasets] = useState([]);
   const [selectAll, setSelectAll] = useState(false);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
@@ -105,12 +105,12 @@ export default function DataTable() {
       });
   }, []);
 
-  const handleTrain = (groupLabel) => {
-    setTrainingInProgress(groupLabel);
-    setCurrentGroupLabel(groupLabel);
+  const handleTrain = (pieceLabel) => {
+    setTrainingInProgress(pieceLabel);
+    setCurrentPieceLabel(pieceLabel);
     setModalOpen(true);
 
-    axios.post(`http://localhost:8000/detection/train/${groupLabel}`)
+    axios.post(`http://localhost:8000/detection/train/${pieceLabel}`)
       .then((response) => {
         // Simulate progress update
         const interval = setInterval(() => {
@@ -234,14 +234,14 @@ export default function DataTable() {
             <Box key={index} mb={3}>
               <CardHeader>
                 <Title>{group.label}</Title>
-                <TrainButton 
+                {/* <TrainButton 
                   onClick={() => handleTrain(group.label)} 
                   variant="contained" 
                   color="primary"
                   disabled={trainingInProgress === group.label}
                 >
                   {trainingInProgress === group.label ? "Training..." : "Train"}
-                </TrainButton>
+                </TrainButton> */}
                 <Button 
                   variant="outlined"
                   onClick={handleSelectAll}
@@ -266,21 +266,12 @@ export default function DataTable() {
                 <TableBody>
                   {group.pieces.map((piece) => (
                     <TableRow key={piece.id} hover>
-                      {/* <TableCell padding="checkbox" align="center">
-                        <IconButton 
-                          onClick={() => handleSelect(piece.label)}
-                          color={selectedDatasets.includes(piece.label) ? "primary" : "default"}
-                        >
-                          {selectedDatasets.includes(piece.label) ? "✓" : " "}
-                        </IconButton>
-                      </TableCell> */}
                       <TableCell colSpan={5} align="center">
                         <Box display="flex" alignItems="center" gap={4} justifyContent="center">
                           <Avatar src={piece.images[0]?.url} /> {/* Display the first image of the dataset */}
                           <Paragraph>{piece.label}</Paragraph>
                         </Box>
                       </TableCell>
-
                       <TableCell align="center" colSpan={2}>{piece.images.length}</TableCell>
                       <TableCell align="center" colSpan={2}>
                         {piece.is_annotated ? <Small bgcolor={bgPrimary}>Completed</Small> : <Small bgcolor={bgError}>Pending</Small>}
@@ -289,17 +280,26 @@ export default function DataTable() {
                         {piece.is_yolo_trained ? <Small bgcolor={bgPrimary}>Trained</Small> : <Small bgcolor={bgError}>Not Trained</Small>}
                       </TableCell>
                       <TableCell align="center" colSpan={2}>
-                      <ActionButton color="info" onClick={() => handleView(piece.label)}>
-                        <Visibility /> {/* Use Visibility icon instead of Edit */}
-                      </ActionButton>
+                        <ActionButton color="info" onClick={() => handleView(piece.label)}>
+                          <Visibility /> {/* Use Visibility icon instead of Edit */}
+                        </ActionButton>
                         <ActionButton color="error" onClick={() => handleDelete(piece.label)}>
-                        
                           <Delete />
                         </ActionButton>
+                        <TrainButton 
+                          onClick={() => handleTrain(piece.label)} 
+                          variant="contained" 
+                          color="primary"
+                          disabled={trainingInProgress === piece.label}
+                          sx={{ marginLeft: 2 }}
+                        >
+                          {trainingInProgress === piece.label ? "Training..." : "Train"}
+                        </TrainButton>
                       </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
+
               </ProductTable>
             </Box>
           ))}

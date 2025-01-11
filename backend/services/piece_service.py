@@ -102,16 +102,26 @@ def rotate_and_update_images(piece_label: str, db: Session):
         
     group_label = match.group(1)
     
-    image_folder = f'dataset/Pieces/Pieces/images/valid/{group_label}/{piece_label}'
-    annotation_folder = f'dataset/Pieces/Pieces/labels/valid/{group_label}/{piece_label}'
-    save_image_folder = f'dataset/Pieces/Pieces/images/train/{group_label}/{piece_label}'
-    save_annotation_folder = f'dataset/Pieces/Pieces/labels/train/{group_label}/{piece_label}'
+    image_folder = f'dataset_custom/{piece_label}/images/valid'
+    annotation_folder = f'dataset_custom/{piece_label}/labels/valid'
+    save_image_folder = f'dataset_custom/{piece_label}/images/train'
+    save_annotation_folder = f'dataset_custom/{piece_label}/labels/train'
+
 
     # Rotate and save images and annotations (assuming you have this function defined)
     rotate_and_save_images_and_annotations(piece_label, rotation_angles=[45,90,135,180,270])
+        # Call the move_files_if_not_moved function to handle the file movement with hash checking
+    move_files_if_not_moved(image_folder, annotation_folder, save_image_folder, save_annotation_folder,2,db)
 
-    # Call the move_files_if_not_moved function to handle the file movement with hash checking
-    move_files_if_not_moved(image_folder, annotation_folder, save_image_folder, save_annotation_folder,2)
+    image_folder_1 = f'dataset/Pieces/Pieces/images/valid/{group_label}/{piece_label}'
+    annotation_folder_1 = f'dataset/Pieces/Pieces/labels/valid/{group_label}/{piece_label}'
+    save_image_folder_1 = f'dataset/Pieces/Pieces/images/train/{group_label}/{piece_label}'
+    save_annotation_folder_1 = f'dataset/Pieces/Pieces/labels/train/{group_label}/{piece_label}'
+
+    # Rotate and save images and annotations (assuming you have this function defined)
+    rotate_and_save_images_and_annotations(piece_label, rotation_angles=[45,90,135,180,270])
+        # Call the move_files_if_not_moved function to handle the file movement with hash checking
+    move_files_if_not_moved(image_folder_1, annotation_folder_1, save_image_folder_1, save_annotation_folder_1,2,db)
 
     # Update piece_image URL in the database after successful movement
     new_image_url = f'Pieces/Pieces/images/train/{group_label}/{piece_label}'

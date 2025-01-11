@@ -38,7 +38,7 @@ def load_my_model():
     
     # Adjust the model directory path
     model_dir = os.path.join(script_dir, '..', 'models')
-    model_path = os.path.join(model_dir, 'yolo8l_model.pt')
+    model_path = os.path.join(model_dir, 'yolo8x_model.pt')
 
     print(f"Script directory: {script_dir}")
     print(f"Model directory: {model_dir}")

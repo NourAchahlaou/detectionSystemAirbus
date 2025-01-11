@@ -8,6 +8,7 @@ from ultralytics import YOLO
 import yaml
 from collections import Counter
 import matplotlib.pyplot as plt
+from database.piece.piece_image import PieceImage
 from services.piece_service import get_piece_labels_by_group, rotate_and_update_images
 from database.piece.piece import Piece
 
@@ -98,26 +99,50 @@ def adjust_imgsz(device):
             return 416  # Smaller image size
     else:
         return 320  # Default for CPU
+def validate_dataset(data_yaml_path):
+    """Validate dataset for label consistency and data split ratio."""
+    logger.info("Validating dataset...")
+    with open(data_yaml_path, 'r') as f:
+        data = yaml.safe_load(f)
 
-def train_model(group_label: str, db: Session):
+    # Check split ratio
+    train_images = len(os.listdir(data['train']))
+    val_images = len(os.listdir(data['val']))
+    
+    total_images = train_images + val_images 
+
+    if not (0.75 <= train_images / total_images <= 0.85):
+        logger.warning("Train dataset split ratio is outside the recommended range (75-85%).")
+    if not (0.05 <= val_images / total_images <= 0.15):
+        logger.warning("Validation dataset split ratio is outside the recommended range (5-15%).")
+
+    logger.info("Dataset validation complete.")
+def train_model(piece_label: str, db: Session):
     model = None
     try:
         # Set service directory
         service_dir = os.path.dirname(os.path.abspath(__file__))
         logger.info(f"Service directory: {service_dir}")
 
-        # Fetch pieces from database
-        pieces = db.query(Piece).filter(Piece.piece_label.like(f'{group_label}%')).all()
-        if not pieces:
-            logger.error(f"No pieces found for group '{group_label}'.")
+        # Fetch the specific piece from the database
+        piece = db.query(Piece).filter(Piece.piece_label == piece_label).first()
+        if not piece:
+            logger.error(f"Piece with label '{piece_label}' not found.")
             return
 
-        for piece in pieces:
-            if not piece.is_annotated:
-                logger.error(f"Piece with label '{piece.piece_label}' is not annotated. Training cannot proceed.")
-                return
+        if not piece.is_annotated:
+            logger.error(f"Piece with label '{piece_label}' is not annotated. Training cannot proceed.")
+            return
 
-        logger.info(f"Found annotated pieces in group: {group_label}")
+        logger.info(f"Found annotated piece: {piece_label}")
+
+        # Retrieve all images for the piece
+        images = db.query(PieceImage).filter(PieceImage.piece_id == piece.id).all()
+        if not images:
+            logger.error(f"No images found for piece '{piece_label}'. Training cannot proceed.")
+            return
+
+        logger.info(f"Found {len(images)} images for piece: {piece_label}")
 
         # Resolve paths
         base_dir_data_yaml_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'dataset', 'Pieces'))
@@ -125,27 +150,30 @@ def train_model(group_label: str, db: Session):
         base_dir_model_save_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'detection'))
         model_save_path = os.path.join(base_dir_model_save_path, 'models', 'yolo8l_model.pt')
 
-        # Log paths for debugging
+          # Model save path
+        base_dir_model_save_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'detection'))
+        model_save_path = os.path.join(base_dir_model_save_path, 'models', f"yolo8l_model.pt")
+
         logger.info(f"Resolved data.yaml path: {data_yaml_path}")
         logger.info(f"Model save path: {model_save_path}")
 
-        # Check if the file exists
+        # Check if the data.yaml file exists
         if not os.path.isfile(data_yaml_path):
             logger.error(f"data.yaml file not found at {data_yaml_path}")
             return
 
+        # Validate dataset for issues
+        validate_dataset(data_yaml_path)
+
         # Ensure the model directory exists
         os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+        # Rotate and update images for the specific piece
+        rotate_and_update_images(piece_label, db)
 
-        # Fetch piece labels and rotate images as before
-        piece_labels = get_piece_labels_by_group(group_label, db)
-        for piece_label in piece_labels:
-            rotate_and_update_images(piece_label, db)
-
-        # Initialize the model (load the previously trained model)
+        # Initialize the model (load the previously trained model for the piece if available)
         device = select_device()
         if os.path.exists(model_save_path):
-            logger.info(f"Loading existing model from {model_save_path}")
+            logger.info(f"Loading existing model for piece {piece_label} from {model_save_path}")
             model = YOLO(model_save_path)  # Load the pre-trained model for fine-tuning
         else:
             logger.info("No pre-existing model found. Starting training from scratch.")
@@ -156,38 +184,69 @@ def train_model(group_label: str, db: Session):
         imgsz = adjust_imgsz(device)
         logger.info(f"Using image size: {imgsz}")
 
-        logger.info(f"Starting fine-tuning for group: {group_label}")
+        logger.info(f"Starting fine-tuning for piece: {piece_label}")
         logger.info(f"Using device: {device}, Batch size: {batch_size}")
 
-        # Fine-tuning loop with stop check
+        # Training parameters and hyperparameter tuning setup
+        hyperparameters = {
+            "optimizer": "AdamW",
+            "cos_lr": False,
+            "lr0": 0.01,
+            "lrf": 0.01,
+            "momentum": 0.937,
+            "weight_decay": 0.0005,
+            "dropout": 0.0,
+            "warmup_epochs": 3.0,
+            "warmup_momentum": 0.8,
+            "warmup_bias_lr": 0.1,
+            "label_smoothing": 0.0,
+        }
+
+        augmentations = {
+            "hsv_h": 0.015,
+            "hsv_s": 0.7,
+            "hsv_v": 0.4,
+            "degrees": 0.0,
+            "translate": 0.1,
+            "scale": 0.5,
+            "shear": 0.0,
+            "perspective": 0.0,
+            "flipud": 0.0,
+            "fliplr": 0.0,
+            "mosaic": 1.0,
+            "mixup": 0.0,
+            "copy_paste": 0.0,
+            "erasing": 0.4,
+            "crop_fraction": 1.0,
+        }
+
+        # Fine-tuning loop
         for epoch in range(50):
-            # Fine-tune for additional epochs
-            if stop_event.is_set() or stop_sign == True:
+            if stop_event.is_set():
                 logger.info("Stop event detected. Ending training.")
                 break
 
-            # Perform one epoch of training
-            model.train(data=data_yaml_path,
-                        epochs=1,
-                        imgsz=640,  # Dynamically adjusted image size
-                        batch=batch_size,
-                        device=device,
-                        amp=True)
-                    
+            model.train(
+                data=data_yaml_path,
+                epochs=1,
+                imgsz=640,
+                batch=batch_size,
+                device=device,
+                amp=True,
+                patience=10,
+                augmentations=augmentations,
+                **hyperparameters
+            )
 
-            # Save model periodically (including fine-tuning progress)
+            # Save model periodically
             model.save(model_save_path)
             logger.info(f"Model saved to {model_save_path} after epoch {epoch + 1}")
 
-        logger.info(f"Model fine-tuning complete. Final model saved to {model_save_path}")
+        logger.info(f"Model fine-tuning complete for piece: {piece_label}. Final model saved to {model_save_path}")
 
-        # Update the `is_yolo_trained` field after training finishes (only once all epochs are done)
-        for piece in pieces:
-            piece.is_yolo_trained = True
-            logger.info(f"Piece {piece.piece_label} is now marked as YOLO trained.")
-
-        # Commit the changes to the database
-        db.commit()  # This saves the updates to the database
+        # Update the `is_yolo_trained` field for the piece
+        piece.is_yolo_trained = True
+        db.commit()
 
     except Exception as e:
         logger.error(f"An error occurred: {e}")
@@ -198,8 +257,7 @@ def train_model(group_label: str, db: Session):
             except Exception as save_error:
                 logger.error(f"Failed to save model after error: {save_error}")
     finally:
-        # Clear the stop event and release resources
         stop_event.clear()
         if torch.cuda.is_available():
-            torch.cuda.empty_cache()  # Clear GPU cache to free memory
+            torch.cuda.empty_cache()
         logger.info("Fine-tuning process finished.")

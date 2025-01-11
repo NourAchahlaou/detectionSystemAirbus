@@ -353,9 +353,17 @@ class FrameSource:
 
         success, frame = self.capture.read()
         if not success:
-            raise SystemError("Failed to capture a frame.")
+            raise SystemError("Failed to capture a frame. Ensure the camera is functioning properly.")
+        
+        if frame is None or frame.size == 0:
+            raise ValueError("Captured frame is empty or invalid.")
 
-        return frame
+        # Enhance the frame: adjust brightness and contrast
+        enhanced_frame = cv2.convertScaleAbs(frame,  alpha=0.8, beta=-30)
+
+
+        return enhanced_frame
+
 
     def generate_frames(self) -> Generator[bytes, None, None]:
         assert self.camera_is_running, "Start the camera first by calling the start() method"
@@ -371,7 +379,7 @@ class FrameSource:
             elif self.type == "basler":
                 if not hasattr(self, 'converter'):
                     raise AttributeError("Converter is not initialized for Basler camera")
-                print("Generating Basler camera frames ...")
+                
                 if self.basler_camera and self.basler_camera.IsGrabbing():
                     grab_result = self.basler_camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
                     if grab_result.GrabSucceeded():
@@ -447,37 +455,38 @@ class FrameSource:
 #instead of next_frame i used this 
     def capture_images(self, save_folder: str, url: str, piece_label: str):
         assert self.camera_is_running, "Start the camera first by calling the start() method"
-        success, frame = self.capture.read()
-        if not success:
-            raise SystemError("Failed to capture a frame")
+        if self.type == "regular" :
+            success, frame = self.capture.read()
+            if not success:
+                raise SystemError("Failed to capture a frame")
 
-        # Resize the frame if needed
-        frame = cv2.resize(frame, (1000, 750))
+            # Resize the frame if needed
+            frame = cv2.resize(frame, (1000, 750))
 
-        # Generate a filename based on the current time
-        timestamp = datetime.now()
-        image_count = len(self.temp_photos) + 1  # Get the current image count
-        image_name = f"{piece_label}_{image_count}.jpg"  # Use the required naming format
-        file_path = os.path.join(save_folder, image_name)
-        photo_url = os.path.join(url, image_name) 
+            # Generate a filename based on the current time
+            timestamp = datetime.now()
+            image_count = len(self.temp_photos) + 1  # Get the current image count
+            image_name = f"{piece_label}_{image_count}.jpg"  # Use the required naming format
+            file_path = os.path.join(save_folder, image_name)
+            photo_url = os.path.join(url, image_name) 
 
-        # Save the frame as an image file
-        cv2.imwrite(file_path, frame)
+            # Save the frame as an image file
+            cv2.imwrite(file_path, frame)
 
-        # Store the captured photo in a temporary list
-        self.temp_photos.append({
-            'piece_label': piece_label,
-            'file_path': file_path,
-            'timestamp': timestamp,
-            'url': photo_url,
-            'image_name': image_name
-        })
+            # Store the captured photo in a temporary list
+            self.temp_photos.append({
+                'piece_label': piece_label,
+                'file_path': file_path,
+                'timestamp': timestamp,
+                'url': photo_url,
+                'image_name': image_name
+            })
 
-        if len(self.temp_photos) > 10:
-            raise SystemError("Already 10 pictures captured.")
-        
-        print(f"Captured {len(self.temp_photos)} photo(s) so far.")
-        return frame
+            if len(self.temp_photos) > 10:
+                raise SystemError("Already 10 pictures captured.")
+            
+            print(f"Captured {len(self.temp_photos)} photo(s) so far.")
+            return frame
 
     def cleanup_temp_photos(self):
         for photo in self.temp_photos:

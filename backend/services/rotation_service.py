@@ -253,11 +253,14 @@ def rotate_and_save_images_and_annotations(piece_label: str, rotation_angles: li
         
     group_label = match.group(1)
     
-
-    image_folder = f'dataset/Pieces/Pieces/images/valid/{group_label}/{piece_label}'
-    annotation_folder = f'dataset/Pieces/Pieces/labels/valid/{group_label}/{piece_label}'
-    save_image_folder = f'dataset/Pieces/Pieces/images/train/{group_label}/{piece_label}'
-    save_annotation_folder = f'dataset/Pieces/Pieces/labels/train/{group_label}/{piece_label}'
+    image_folder = f'dataset_custom/{piece_label}/images/valid'
+    annotation_folder = f'dataset_custom/{piece_label}/labels/valid'
+    save_image_folder = f'dataset_custom/{piece_label}/images/train'
+    save_annotation_folder = f'dataset_custom/{piece_label}/labels/train'
+    # image_folder = f'dataset/Pieces/Pieces/images/valid/{group_label}/{piece_label}'
+    # annotation_folder = f'dataset/Pieces/Pieces/labels/valid/{group_label}/{piece_label}'
+    # save_image_folder = f'dataset/Pieces/Pieces/images/train/{group_label}/{piece_label}'
+    # save_annotation_folder = f'dataset/Pieces/Pieces/labels/train/{group_label}/{piece_label}'
 
     if not os.path.exists(save_image_folder):
         os.makedirs(save_image_folder)
