@@ -15,7 +15,7 @@ from services import user_service
 
 SECRET_KEY = "ca65668bc0eb49efc4df1c8437c46a7b73b85e13419fa33564939651cbd5b2c4"
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 300000
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

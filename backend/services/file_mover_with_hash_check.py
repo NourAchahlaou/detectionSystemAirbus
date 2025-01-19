@@ -2,6 +2,10 @@ import hashlib
 import os
 import shutil
 import random
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from database.piece.piece_image import PieceImage
 
 # Helper function to compute the file hash (MD5 in this case)
 def compute_file_hash(filepath):
@@ -11,8 +15,7 @@ def compute_file_hash(filepath):
         hasher.update(buf)
     return hasher.hexdigest()
 
-# Move files if their hash doesn't match between source and destination
-def move_files_if_not_moved(image_folder, annotation_folder, save_image_folder, save_annotation_folder, num_valid_files_to_keep):
+def move_files_if_not_moved(image_folder, annotation_folder, save_image_folder, save_annotation_folder, num_valid_files_to_keep, db: Session):
     # Create source folders if they don't exist
     os.makedirs(image_folder, exist_ok=True)
     os.makedirs(annotation_folder, exist_ok=True)
@@ -30,11 +33,12 @@ def move_files_if_not_moved(image_folder, annotation_folder, save_image_folder, 
         print(f"Not enough files to move. There are only {num_files} files, which is less than or equal to the number to keep ({num_valid_files_to_keep}).")
         return
 
-    # Determine how many files to move
-    num_files_to_move = num_files - num_valid_files_to_keep
+    # Filter out images ending with _1 and _2
+    files_to_move = [file for file in image_files if not (file.endswith('_1.jpg') or file.endswith('_2.jpg'))]
 
-    # Randomly select files to move
-    files_to_move = random.sample(image_files, num_files_to_move)
+    # Ensure we don't move more files than we need
+    if len(files_to_move) > num_files - num_valid_files_to_keep:
+        files_to_move = random.sample(files_to_move, num_files - num_valid_files_to_keep)
 
     # Create destination folders if they don't exist
     os.makedirs(save_image_folder, exist_ok=True)
@@ -70,14 +74,25 @@ def move_files_if_not_moved(image_folder, annotation_folder, save_image_folder, 
                     continue
         
             shutil.move(src_annotation_path, dest_annotation_path)
-        
+
+        # Update the database with new file paths and URL
+        #update_piece_image_paths(db, image_file, dest_image_path, annotation_file, save_annotation_folder)
+
         print(f"Moved {image_file} and {annotation_file}.")
 
-# Example usage
-move_files_if_not_moved(
-    image_folder='dataset/Pieces/Pieces/images/valid',
-    annotation_folder='dataset/Pieces/Pieces/labels/valid',
-    save_image_folder='dataset/Pieces/Pieces/images/train',
-    save_annotation_folder='dataset/Pieces/Pieces/labels/train',
-    num_valid_files_to_keep=2
-)
+def update_piece_image_paths(db: Session, image_file: str, image_path: str, annotation_file: str, annotation_folder: str):
+    try:
+        # Update the path and URL in the database
+        piece_image = db.query(PieceImage).filter(PieceImage.image_name == image_file).first()
+
+        if piece_image:
+            piece_image.piece_path = image_path
+            piece_image.url = f"/static/images/{image_file}"  # Assuming static files served from this URL
+            db.commit()
+            print(f"Updated paths for {image_file} in database.")
+        else:
+            print(f"Piece image not found for {image_file}.")
+    except SQLAlchemyError as e:
+        db.rollback()
+        print(f"Error updating database: {e}")
+

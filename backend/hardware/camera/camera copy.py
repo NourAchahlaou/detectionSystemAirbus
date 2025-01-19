@@ -1,18 +1,17 @@
 
 import os
 import threading
-from pypylon import pylon
+
 from sqlalchemy import func
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Dict, Generator, List, Tuple
 import cv2
 from fastapi import HTTPException
 
 from sqlalchemy.orm import Session
 from api.camera.models.camera_settings import UpdateCameraSettings
-
 from database.piece.piece import Piece
 from database.piece.piece_image import PieceImage
-from hardware.camera.external_camera import get_available_cameras
+from hardware.camera.external_camera import get_usb_devices
 from database.camera.camera_settings import CameraSettings
 from database.camera.camera import Camera
 from datetime import datetime
@@ -30,12 +29,8 @@ class FrameSource:
         self.capture = None
         self.detection_service = None
         self.temp_photos = []  # To keep track of temporary photos
-        self.basler_camera = None
-        self.type= None
+        
         self.confidence_threshold = 0.5  # Set the confidence threshold
-        self.converter = pylon.ImageFormatConverter()
-        self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
-        self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
     # Reset virtual_storage whenever needed
 
 
@@ -43,182 +38,106 @@ class FrameSource:
         return self.capture.isOpened()
 
     def detect_and_save_cameras(self, db: Session):
-        available_cameras = get_available_cameras()  # Use the updated function
-        print("Available Cameras:", available_cameras)
+        usb_cameras = get_usb_devices()
+        print(usb_cameras)
+        available_cameras = []
 
-        for camera in available_cameras:
-            if camera['type'] == 'basler':
-                # Handle Basler camera
-                print(f"Detected Basler Camera: {camera['caption']}")
-                
-                # Assume `device` contains necessary Basler information
-                basler_info = {
-                    "type": "basler",
-                    "caption": camera['caption'],
-                    "device_details": str(camera['device'])  # Convert to string for saving if needed
-                }
-                # Pass the correct camera type and other details
-                camera_info = self.get_camera_info(camera_index=None,
-                                                   serial_number=None,  # Basler cameras might not use index
-                                                    model_name=camera['caption'], 
-                                                    camera_type='basler', 
-                                                    device=camera['device'])
+        for index, camera in enumerate(usb_cameras):
+            # Use the index with cv2.VideoCapture
+            capture = cv2.VideoCapture(index)
+            if capture.isOpened():
+                available_cameras.append(camera)
+                print(f"Detected Camera: {camera['Caption']}")
+
+                camera_info = self.get_camera_info(index, camera['Caption'])
                 if camera_info:
                     print(camera_info)
                     self.save_camera_info(db, camera_info)
 
-            elif camera['type'] == 'opencv':
-                # Handle OpenCV-compatible camera
-                index = camera.get('index')
-                capture = cv2.VideoCapture(index)
-
-                if capture.isOpened():
-                    print(f"Detected OpenCV Camera: {camera['caption']}")
-
-                    # Pass the correct camera type
-                    camera_info = self.get_camera_info(camera_index=index, 
-                                                       serial_number=None,
-                                                    model_name=camera['caption'], 
-                                                    camera_type='regular')
-                    if camera_info:
-                        print(camera_info)
-                        self.save_camera_info(db, camera_info)
-
-                    capture.release()
-                else:
-                    print(f"Failed to open OpenCV Camera at index {index}")
-                    continue
+                capture.release()
+            else:
+                print(f"Not detecting any camera at index {index}")
 
         return available_cameras
 
 
     @staticmethod
-    def get_camera_info(camera_index: Optional[int],serial_number:Optional[str], model_name: str, camera_type: str, device: Optional[pylon.DeviceInfo] = None) -> Optional[Dict]:
-        """
-        Retrieve or apply default camera settings based on the camera type (regular or Basler).
-        """
-        try:
-            if camera_type == "regular":
-                # For OpenCV-compatible cameras
-                capture = cv2.VideoCapture(camera_index)
-                if not capture.isOpened():
-                    raise ValueError(f"Failed to open camera with index {camera_index}")
-
-                # Getting camera settings
-                settings = {
-                    "exposure": capture.get(cv2.CAP_PROP_EXPOSURE),
-                    "contrast": capture.get(cv2.CAP_PROP_CONTRAST),
-                    "brightness": capture.get(cv2.CAP_PROP_BRIGHTNESS),
-                    "focus": capture.get(cv2.CAP_PROP_FOCUS),
-                    "aperture": capture.get(cv2.CAP_PROP_APERTURE),
-                    "gain": capture.get(cv2.CAP_PROP_GAIN),
-                    "white_balance": capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U),
-                }
-                return {
-                    "camera_type": "regular",
-                    "camera_index": camera_index,
-                    "model": model_name,
-                    "settings": settings,
-                }
-
-            elif camera_type == "basler" and device:
-                # For Basler cameras
-                camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
-                camera.Open()
-
-                try:
-                    # Get the camera's node map and apply settings
-                    node_map = camera.GetNodeMap()
-                    print("Applying default settings for Basler camera...")
-                    exposure_node = node_map.GetNode("ExposureTime")
-                    exposure_node.SetValue(40000)
-                    gain_node = node_map.GetNode("Gain")
-                    gain_node.SetValue(0.8)
-                    acquisition_mode_node = node_map.GetNode("AcquisitionMode")
-                    acquisition_mode_node.SetValue("Continuous")
-
-                    # Retrieve camera settings
-                    settings = {
-                        "exposure": 40000,
-                        "contrast": None,
-                        "brightness": None,
-                        "focus": None,
-                        "aperture": None,
-                        "gain": 0.8,
-                        "white_balance": None,
-                    }
-
-                    # Retrieve camera information
-                    camera_info = camera.GetDeviceInfo()
-                    serial_number = camera_info.GetSerialNumber() if camera_info.GetSerialNumber() else "unknown"
-
-                    return {
-                        "camera_type": "basler",
-                        "serial_number": serial_number,
-                        "model": model_name,
-                        "settings": settings,
-                    }
-
-                except Exception as e:
-                    print(f"Error retrieving camera info for Basler camera: {e}")
-                    return None
-
-                finally:
-                    camera.Close()
-            else:
-                raise ValueError(f"Unsupported camera type: {camera_type}")
-
-        except Exception as e:
-            print(f"Error retrieving camera info for {camera_type} camera: {e}")
+    def get_camera_info(camera_index: int, model_name: str) -> Dict:
+        capture = cv2.VideoCapture(camera_index)
+        if not capture.isOpened():
             return None
 
-        finally:
-            if 'capture' in locals() and capture.isOpened():
-                capture.release()
+        # Getting camera settings (example values)
+        exposure = capture.get(cv2.CAP_PROP_EXPOSURE)
+        contrast = capture.get(cv2.CAP_PROP_CONTRAST)
+        brightness = capture.get(cv2.CAP_PROP_BRIGHTNESS)
+        focus = capture.get(cv2.CAP_PROP_FOCUS)
+        aperture = capture.get(cv2.CAP_PROP_APERTURE)
+        gain = capture.get(cv2.CAP_PROP_GAIN)
+        
+        white_balance = capture.get(cv2.CAP_PROP_WHITE_BALANCE_BLUE_U)
+
+        capture.release()
+
+        return {
+            "camera_index": camera_index,
+            "model": model_name,
+            "settings": {
+                "exposure": exposure,
+                "contrast": contrast,
+                "brightness": brightness,
+                "focus": focus,
+                "aperture": aperture,
+                "gain": gain,
+                
+                "white_balance": white_balance,
+            }
+        }
 
 
     @staticmethod
-    def save_camera_info(db: Session, camera_info: Dict):
-        # Check if serial_number exists in camera_info
-        serial_number = camera_info.get('serial_number', 'Unknown')
-
-        existing_camera = db.query(Camera).filter(Camera.serial_number == serial_number).first()
+    def save_camera_info(db: Session, camera_info:Dict):
+        # Check if the camera already exists
+        existing_camera = db.query(Camera).filter(Camera.model == camera_info['model']).first()
         if existing_camera:
-            print(f"Camera with serial number {serial_number} already registered.")
+            print("Camera already registered.")
             return existing_camera
 
         # Create CameraSettings object
         settings = CameraSettings(
-            exposure=camera_info['settings'].get('exposure'),
-            contrast=camera_info['settings'].get('contrast'),
-            brightness=camera_info['settings'].get('brightness'),
-            focus=camera_info['settings'].get('focus'),
-            aperture=camera_info['settings'].get('aperture'),
-            gain=camera_info['settings'].get('gain'),
-            white_balance=camera_info['settings'].get('white_balance'),
+            exposure=camera_info['settings']['exposure'],
+            contrast=camera_info['settings']['contrast'],
+            brightness=camera_info['settings']['brightness'],
+            focus=camera_info['settings']['focus'],
+            aperture=camera_info['settings']['aperture'],
+            gain=camera_info['settings']['gain'],
+           
+            white_balance=camera_info['settings']['white_balance'],
         )
+
+        # Add settings to the database
         db.add(settings)
         db.commit()
         db.refresh(settings)
 
         # Create Camera object
         camera = Camera(
-            camera_type=camera_info['camera_type'],
-            camera_index=camera_info.get('camera_index'),
-            serial_number=serial_number,
+            camera_index=camera_info['camera_index'],
             model=camera_info['model'],
             status=False,
-            settings_id=settings.id,
+            settings_id=settings.id
         )
+
+        # Add camera to the database
         db.add(camera)
         db.commit()
         db.refresh(camera)
 
-        print(f"Camera with serial number {serial_number} registered successfully!")
+        print("Camera and settings registered successfully!")
         return camera
 
     def get_camera_by_index(self, camera_id, db: Session):
-       
+        # Query the database for the camera with the given ID
         return db.query(Camera).filter(Camera.id == camera_id).first()
 
     def get_camera_model_and_ids(self, db: Session) -> List[Tuple[int, str]]:
@@ -226,8 +145,7 @@ class FrameSource:
         return db.query(Camera.id, Camera.model).all()
     
 
-
-    def start(self, camera_id, db: Session):
+    def start(self, camera_id, db: Session ):
         if self.camera_is_running:
             print("Camera is already running.")
             return
@@ -239,112 +157,50 @@ class FrameSource:
         camera = self.get_camera_by_index(camera_id, db)
         if camera is None:
             raise ValueError(f"No camera found with id {camera_id} in the database.")
+        
+        # Start the camera using the fetched index or identifier
+        self.capture = cv2.VideoCapture(camera.camera_index)
+        if not self._check_camera():
+            raise SystemError(f"Camera with index {camera.camera_index} not working.")
 
-        # Check the camera type (regular or Basler)
-        if camera.camera_type == "regular":
-            # For regular cameras (OpenCV compatible)
-            self.capture = cv2.VideoCapture(camera.camera_index)
-            if not self._check_camera():
-                raise SystemError(f"Camera with index {camera.camera_index} not working.")
-            self.type = "regular"
-            print(f"Camera with index {camera.camera_index} started successfully.")
-
-        elif camera.camera_type == "basler":
-            # For Basler cameras
-            print(f"Attempting to start Basler camera with serial number: {camera.serial_number}")
-
-            try:
-                device_info = pylon.DeviceInfo()
-                serial_number = str(camera.serial_number)  # Convert serial_number to string
-                device_info.SetSerialNumber(serial_number)  # Set serial number
-
-                # Create and open the Basler camera
-                self.basler_camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device_info))
-                self.basler_camera.Open()
-                self.converter = pylon.ImageFormatConverter()
-                self.converter.OutputPixelFormat = pylon.PixelType_BGR8packed
-                self.converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
-                self.type = "basler"
-                print("Basler camera opened successfully.")
-
-                # Check if the camera is grabbing frames
-                if not self.basler_camera.IsGrabbing():
-                    print("Starting camera grabbing...")
-                    self.basler_camera.StartGrabbing()
-                    print("Camera grabbing started.")
-                else:
-                    print("Camera is already grabbing.")
-
-            except Exception as e:
-                raise SystemError(f"Failed to start Basler camera: {e}")
-
-        else:
-            raise ValueError(f"Unsupported camera type: {camera.camera_type}")
-
-        # Mark the camera as running
         self.camera_is_running = True
-        print(f"Camera with ID {camera_id} started successfully.")
-
-
+        print(f"Camera with index {camera.camera_index} started successfully.")
    
+ # Event to signal when to stop
     def stopInspection(self):
         if not self.camera_is_running:
             print("Camera is not running.")
             return
 
-        # Stop regular OpenCV camera (if applicable)
         if self.capture is not None:
             self.capture.release()
             self.capture = None
-            print("Regular OpenCV camera stopped.")
-
-        # Stop Basler camera (if applicable)
-        if self.basler_camera is not None:
-            try:
-                self.basler_camera.StopGrabbing()
-                self.basler_camera.Close()  # Close the Basler camera to release resources
-                self.basler_camera = None
-                print("Basler camera stopped and resources released.")
-            except Exception as e:
-                print(f"Error stopping Basler camera: {e}")
 
         self.camera_is_running = False
-        self.type =None
-        print("Camera stopped and resources released.")
 
-        # If using stop_event for threading purposes
+    #     # Set the global stop_event to signal stop
         if 'stop_event' in globals():
             stop_event.set()
+
+    print("Camera stopped and resources released.")
 
     def stop(self):
         if not self.camera_is_running:
             print("Camera is not running.")
             return
 
-        # Stop regular OpenCV camera (if applicable)
         if self.capture is not None:
             self.capture.release()
             self.capture = None
-            print("Regular OpenCV camera stopped.")
-
-        # Stop Basler camera (if applicable)
-        if self.basler_camera is not None:
-            try:
-                self.basler_camera.StopGrabbing()
-                self.basler_camera.Close()  # Close the Basler camera to release resources
-                self.basler_camera = None
-                print("Basler camera stopped and resources released.")
-            except Exception as e:
-                print(f"Error stopping Basler camera: {e}")
 
         self.camera_is_running = False
-        self.type = None
-        print("Camera stopped and resources released.")
-
-        # Set the event to signal stop
         stop_event = threading.Event() 
-        stop_event.set()
-        print("Stop event triggered.")
+        
+
+      
+        # Set the event to signal stop
+        stop_event.set()  
+        print("Camera stopped and resources released.")
 
 
 
@@ -353,48 +209,24 @@ class FrameSource:
 
         success, frame = self.capture.read()
         if not success:
-            raise SystemError("Failed to capture a frame. Ensure the camera is functioning properly.")
-        
-        if frame is None or frame.size == 0:
-            raise ValueError("Captured frame is empty or invalid.")
+            raise SystemError("Failed to capture a frame.")
 
-        # Enhance the frame: adjust brightness and contrast
-        enhanced_frame = cv2.convertScaleAbs(frame,  alpha=2, beta=-50)
-
-
-        return enhanced_frame
-
+        return frame
 
     def generate_frames(self) -> Generator[bytes, None, None]:
         assert self.camera_is_running, "Start the camera first by calling the start() method"
         while self.camera_is_running:
-            if self.type == "regular":
-                success, frame = self.capture.read()
-                if not success:
-                    break
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            elif self.type == "basler":
-                if not hasattr(self, 'converter'):
-                    raise AttributeError("Converter is not initialized for Basler camera")
-                
-                if self.basler_camera and self.basler_camera.IsGrabbing():
-                    grab_result = self.basler_camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-                    if grab_result.GrabSucceeded():
-                        image = self.converter.Convert(grab_result)
-                        frame = image.GetArray()
-                        _, buffer = cv2.imencode('.jpg', frame)
-                        yield (b'--frame\r\n'
-                            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-                    grab_result.Release()
-                else:
-                    break
+            success, frame = self.capture.read()
+            if not success:
+                break
+            _, buffer = cv2.imencode('.jpg', frame)
+            frame_bytes = buffer.tobytes()
+            yield (b'--frame\r\n'
+                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
     
     
 # !TODO : change the timestamps into a counter 
-#didn't use this 
+
     def next_frame(self, db: Session, save_folder: str, url: str, piece_label: str):
         assert self.camera_is_running, "Start the camera first by calling the start() method"
 
@@ -452,41 +284,40 @@ class FrameSource:
         print("Photo of the piece is registered successfully!")
         return frame
     
-#instead of next_frame i used this 
+
     def capture_images(self, save_folder: str, url: str, piece_label: str):
         assert self.camera_is_running, "Start the camera first by calling the start() method"
-        if self.type == "regular" :
-            success, frame = self.capture.read()
-            if not success:
-                raise SystemError("Failed to capture a frame")
+        success, frame = self.capture.read()
+        if not success:
+            raise SystemError("Failed to capture a frame")
 
-            # Resize the frame if needed
-            frame = cv2.resize(frame, (1000, 750))
+        # Resize the frame if needed
+        frame = cv2.resize(frame, (1000, 750))
 
-            # Generate a filename based on the current time
-            timestamp = datetime.now()
-            image_count = len(self.temp_photos) + 1  # Get the current image count
-            image_name = f"{piece_label}_{image_count}.jpg"  # Use the required naming format
-            file_path = os.path.join(save_folder, image_name)
-            photo_url = os.path.join(url, image_name) 
+        # Generate a filename based on the current time
+        timestamp = datetime.now()
+        image_count = len(self.temp_photos) + 1  # Get the current image count
+        image_name = f"{piece_label}_{image_count}.jpg"  # Use the required naming format
+        file_path = os.path.join(save_folder, image_name)
+        photo_url = os.path.join(url, image_name) 
 
-            # Save the frame as an image file
-            cv2.imwrite(file_path, frame)
+        # Save the frame as an image file
+        cv2.imwrite(file_path, frame)
 
-            # Store the captured photo in a temporary list
-            self.temp_photos.append({
-                'piece_label': piece_label,
-                'file_path': file_path,
-                'timestamp': timestamp,
-                'url': photo_url,
-                'image_name': image_name
-            })
+        # Store the captured photo in a temporary list
+        self.temp_photos.append({
+            'piece_label': piece_label,
+            'file_path': file_path,
+            'timestamp': timestamp,
+            'url': photo_url,
+            'image_name': image_name
+        })
 
-            if len(self.temp_photos) > 10:
-                raise SystemError("Already 10 pictures captured.")
-            
-            print(f"Captured {len(self.temp_photos)} photo(s) so far.")
-            return frame
+        if len(self.temp_photos) > 10:
+            raise SystemError("Already 10 pictures captured.")
+        
+        print(f"Captured {len(self.temp_photos)} photo(s) so far.")
+        return frame
 
     def cleanup_temp_photos(self):
         for photo in self.temp_photos:

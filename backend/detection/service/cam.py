@@ -2,7 +2,8 @@ import time
 import cv2
 import numpy as np
 from pypylon import pylon
-
+import os
+from datetime import datetime
 
 # Function to resize an image while maintaining aspect ratio
 def resize_image(image, max_width, max_height):
@@ -18,19 +19,29 @@ def resize_image(image, max_width, max_height):
 
     return cv2.resize(image, (new_width, new_height))
 
-
-
-
+# Function to save an image with a dynamic filename
+def save_image(image):
+    # Create the directory if it doesn't exist
+    os.makedirs('captured_images', exist_ok=True)
+    
+    # Generate a dynamic filename with a timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    filename = f'captured_images/image_{timestamp}.jpg'
+    
+    # Save the image
+    cv2.imwrite(filename, image)
+    print(f"Image saved as {filename}")
 
 # Initialize and configure the camera
 def initialize_camera():
     camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
     camera.Open()
-    camera.ExposureTime.SetValue(40000)
+    camera.Width.SetValue(5000)
+    camera.Height.SetValue(3000)
+    camera.ExposureTime.SetValue(50000)
     camera.Gain.SetValue(0.8)
     camera.AcquisitionMode.SetValue("Continuous")
     return camera
-
 
 def main():
     # Initialize the camera
@@ -60,11 +71,13 @@ def main():
             img = grab_result.Array
 
             # Resize image for display
-            resized_img = resize_image(img, max_width=1000, max_height=700)
+            resized_img = resize_image(img, max_width=1920, max_height=1080)
 
             # Display the resized image
             cv2.imshow("Resized Image", resized_img)
 
+            # Save the image with a dynamic name
+            save_image(resized_img)
 
             cv2.waitKey(0)
 
@@ -78,7 +91,6 @@ def main():
             grab_result.Release()
         camera.StopGrabbing()
         camera.Close()
-
 
 if __name__ == "__main__":
     main()

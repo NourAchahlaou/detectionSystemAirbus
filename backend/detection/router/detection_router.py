@@ -149,11 +149,11 @@ def stop_video():
     logger.info("Stop video signal sent.")
 
 
-@router.post("/train/{group_label}")
-def train_piece_model(group_label: str, db: Session = Depends(get_db)):
+@router.post("/train/{piece_label}")
+def train_piece_model(piece_label: str, db: Session = Depends(get_db)):
     try:
         # Call the train_model function
-        train_model(group_label, db)
+        train_model(piece_label, db)
         return {"message": "Training process started. Check logs for updates."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"An error occurred: {e}")

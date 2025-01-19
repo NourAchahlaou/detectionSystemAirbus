@@ -6,8 +6,6 @@ import threading
 import time
 import numpy as np
 
-from hardware.camera.external_camera import get_available_cameras, get_usb_devices
-
 
 # Function to resize an image while maintaining aspect ratio
 def resize_image(image, max_width, max_height):
@@ -24,6 +22,55 @@ def resize_image(image, max_width, max_height):
     return cv2.resize(image, (new_width, new_height))
 
 
+def get_usb_devices() -> List[Dict[str, str]]:
+    """Retrieve a list of USB devices that match the keyword 'Camera'."""
+    wmi = win32com.client.GetObject("winmgmts:")
+    devices = wmi.ExecQuery("SELECT * FROM Win32_PnPEntity WHERE Caption LIKE '%Camera%'")
+    cameras = []
+
+    for device in devices:
+        cameras.append({
+            "Caption": device.Caption,
+            "DeviceID": device.DeviceID
+        })
+
+    return cameras
+
+
+def detect_camera_type(camera_caption: str) -> str:
+    """Detect the type of camera based on its caption."""
+    if "Basler" in camera_caption:
+        return "basler"
+    elif "Camera" in camera_caption or "USB" in camera_caption:
+        return "opencv"
+    return "unknown"
+
+
+def get_available_cameras() -> List[Dict]:
+    """Detect available cameras, including Basler and OpenCV-compatible cameras."""
+    usb_devices = get_usb_devices()
+    available_cameras = []
+
+    # Detect Basler cameras
+    basler_devices = pylon.TlFactory.GetInstance().EnumerateDevices()
+    for device in basler_devices:
+        available_cameras.append({
+            "type": "basler",
+            "device": device,
+            "caption": device.GetModelName()
+        })
+
+    # Detect OpenCV-compatible cameras
+    for index, camera in enumerate(usb_devices):
+        camera_type = detect_camera_type(camera["Caption"])
+        if camera_type == "opencv":
+            available_cameras.append({
+                "type": "opencv",
+                "index": index,
+                "caption": camera["Caption"]
+            })
+
+    return available_cameras
 
 
 def initialize_camera(basler_device):
@@ -36,7 +83,14 @@ def initialize_camera(basler_device):
     return camera
 
 
-
+def process_opencv_camera(camera, index):
+    """Capture and display frames from an OpenCV camera."""
+    while True:
+        ret, frame = camera.read()
+        if ret:
+            cv2.imshow(f"OpenCV Camera {index}", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
 
 def process_basler_camera(basler_device, caption):
@@ -75,51 +129,6 @@ def process_basler_camera(basler_device, caption):
     finally:
         camera.StopGrabbing()
         camera.Close()
-
-def configure_basler_camera(device, model_name):
-    """
-    Configure a Basler camera with default settings.
-    """
-    try:
-        # Create and open the Basler camera
-        camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateDevice(device))
-        camera.Open()
-
-        # Get the camera's node map
-        node_map = camera.GetNodeMap()
-
-        # Apply default settings
-        print("Applying default settings...")
-        exposure_node = node_map.GetNode("ExposureTime")
-        if exposure_node and exposure_node.IsWritable():
-            exposure_node.SetValue(40000)  # Default exposure time (in microseconds)
-
-        gain_node = node_map.GetNode("Gain")
-        if gain_node and gain_node.IsWritable():
-            gain_node.SetValue(0.8)  # Default gain
-
-        acquisition_mode_node = node_map.GetNode("AcquisitionMode")
-        if acquisition_mode_node and acquisition_mode_node.IsWritable():
-            acquisition_mode_node.SetValue("Continuous")  # Set acquisition mode to continuous
-
-        # Retrieve and return camera information
-        camera_info = camera.GetDeviceInfo()
-        camera.Close()
-
-        return {
-            "camera_type": "basler",
-            "serial_number": camera_info.GetSerialNumber(),
-            "model": model_name,
-            "settings": {
-                "exposure": 40000,
-                "gain": 0.8,
-                "acquisition_mode": "Continuous",
-            },
-        }
-
-    except Exception as e:
-        print(f"Error configuring Basler camera: {e}")
-        return None
 
 
 # Main Logic

@@ -54,9 +54,12 @@ static/
 
 capture_logs.log
 training_logs
-yolov8l.log
+yolov8x.log
+yolov8x.pt
 /dataset
+/dataset_custom
 /captured_images
 /runs
-/detection/models/yolo8l_model.pt
+/detection/models
 /detection/test
+/detection/models copy

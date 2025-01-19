@@ -3,3 +3,4 @@
 /env
 training_logs.log
 /runs
+/captured_images
