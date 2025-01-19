@@ -162,14 +162,13 @@ def train_model(piece_label: str, db: Session):
         logger.info(f"Found {len(images)} images for piece: {piece_label}")
 
         # Generate a custom dataset for the specific piece
-        piece_data_dir = os.path.join(service_dir, "..", "..", "dataset_custom", piece_label)
-
+        piece_data_dir = os.path.join(service_dir, "..", "..", "dataset_custom")
         os.makedirs(piece_data_dir, exist_ok=True)
 
-        image_dir = os.path.join(piece_data_dir, "images", "valid")
-        image_dir_train = os.path.join(piece_data_dir, "images", "train")
-        label_dir = os.path.join(piece_data_dir, "labels", "valid")
-        label_dir_train = os.path.join(piece_data_dir, "labels", "train")
+        image_dir = os.path.join(piece_data_dir, "images", "valid",piece_label)
+        image_dir_train = os.path.join(piece_data_dir, "images", "train",piece_label)
+        label_dir = os.path.join(piece_data_dir, "labels", "valid",piece_label)
+        label_dir_train = os.path.join(piece_data_dir, "labels", "train",piece_label)
         os.makedirs(image_dir, exist_ok=True)
         os.makedirs(label_dir, exist_ok=True)
         os.makedirs(image_dir_train, exist_ok=True)
@@ -181,21 +180,12 @@ def train_model(piece_label: str, db: Session):
             for annotation in image.annotations:
                 label_path = os.path.join(label_dir, annotation.annotationTXT_name)
                 with open(label_path, "w") as label_file:
-                    label_file.write(f"0 {annotation.x} {annotation.y} {annotation.width} {annotation.height}\n")
+                    label_file.write(f"{piece.class_data_id} {annotation.x} {annotation.y} {annotation.width} {annotation.height}\n")
 
         # Create a custom data.yaml for this piece
         data_yaml_path = os.path.join(piece_data_dir, "data.yaml")
-        with open(data_yaml_path, "w") as yaml_file:
-            yaml.dump(
-                {
-                    "train": image_dir_train,
-                    "val": image_dir,  # Use the same images for simplicity
-                    "nc": 1,  # Number of classes (only one for this piece)
-                    "names": {0: piece_label},  # Ensure class index starts from 0
-                },
-                yaml_file,
-            )
-        
+
+
         model_save_path = os.path.join(service_dir, '..', '..', 'detection', 'models', f"yolo8x_model.pt")
         logger.info(f"Resolved data.yaml path: {data_yaml_path}")
         logger.info(f"Model save path: {model_save_path}")
@@ -244,6 +234,7 @@ def train_model(piece_label: str, db: Session):
             "label_smoothing" : 0.1,
         }
 
+        # Augmentation parameters (Mosaic and Mixup)
         augmentations = {
             "hsv_h": 0.015,  
             "hsv_s": 0.7,  
@@ -262,13 +253,14 @@ def train_model(piece_label: str, db: Session):
             "crop_fraction": 1.0,
         }
 
+
         # Merge augmentations into hyperparameters
         hyperparameters.update(augmentations)
 
         # Set the optimizer object
 
         # Fine-tuning loop
-        for epoch in range(50):
+        for epoch in range(25):
             if stop_event.is_set():
                 logger.info("Stop event detected. Ending training.")
                 break
@@ -280,6 +272,9 @@ def train_model(piece_label: str, db: Session):
                 imgsz=640,
                 batch=batch_size,
                 device=device,
+                project=os.path.dirname(model_save_path),
+                name=piece_label,
+                exist_ok=True,
                 amp=True,
                 patience=10,
                 augment=True,  # Ensure augmentation is enabled
@@ -294,9 +289,6 @@ def train_model(piece_label: str, db: Session):
                     batch=batch_size,
                     device=device,
                 )
-
-
-
 
                 logger.info(f"Validation results after epoch {epoch + 1}: {validation_results}")
 
@@ -326,3 +318,4 @@ def train_model(piece_label: str, db: Session):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info("Fine-tuning process finished.")
+

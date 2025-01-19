@@ -359,7 +359,7 @@ class FrameSource:
             raise ValueError("Captured frame is empty or invalid.")
 
         # Enhance the frame: adjust brightness and contrast
-        enhanced_frame = cv2.convertScaleAbs(frame,  alpha=0.8, beta=-30)
+        enhanced_frame = cv2.convertScaleAbs(frame,  alpha=2, beta=-50)
 
 
         return enhanced_frame

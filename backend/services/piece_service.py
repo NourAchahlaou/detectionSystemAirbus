@@ -102,10 +102,10 @@ def rotate_and_update_images(piece_label: str, db: Session):
         
     group_label = match.group(1)
     
-    image_folder = f'dataset_custom/{piece_label}/images/valid'
-    annotation_folder = f'dataset_custom/{piece_label}/labels/valid'
-    save_image_folder = f'dataset_custom/{piece_label}/images/train'
-    save_annotation_folder = f'dataset_custom/{piece_label}/labels/train'
+    image_folder = f'dataset_custom/images/valid/{piece_label}'
+    annotation_folder = f'dataset_custom/labels/valid/{piece_label}'
+    save_image_folder = f'dataset_custom/images/train/{piece_label}'
+    save_annotation_folder = f'dataset_custom/labels/train/{piece_label}'
 
 
     # Rotate and save images and annotations (assuming you have this function defined)
@@ -274,7 +274,7 @@ def save_annotations_to_db(db: Session, piece_label: str, save_folder: str):
     if (all_images_annotatedTF-1)  == 0 :
         piece.is_annotated = True 
         print("All images annotated. Updating piece to annotated.")
-        data_yaml_path = os.path.join("dataset","Pieces", "data.yaml")
+        data_yaml_path = os.path.join("dataset_custom", "data.yaml")
 
         # Load existing data if it exists
         if os.path.exists(data_yaml_path):
@@ -285,8 +285,8 @@ def save_annotations_to_db(db: Session, piece_label: str, save_folder: str):
             data_yaml = {
                 'names': {},
                 'nc': 0,
-                'val': os.path.join("C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus", "backend", "dataset","Pieces","Pieces","images","valid"),
-                'train': os.path.join("C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus", "backend", "dataset","Pieces","Pieces", "images", "train")
+                'val': os.path.join("C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus", "backend", "dataset_custom","images","valid"),
+                'train': os.path.join("C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus", "backend", "dataset_custom", "images", "train")
                 # C:\Users\hp\Desktop\Airbus\detectionSystemAirbus
 
             }

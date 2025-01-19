@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+from pickletools import optimize
 import shutil
 import torch
 from fastapi import HTTPException
@@ -12,7 +13,7 @@ import matplotlib.pyplot as plt
 from database.piece.piece_image import PieceImage
 from services.piece_service import get_piece_labels_by_group, rotate_and_update_images
 from database.piece.piece import Piece
-
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 # Set up logging
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -130,6 +131,9 @@ def add_background_images(data_yaml_path):
     else:
         logger.warning("No background images found.")
 
+import torch
+from torch.optim import AdamW  # Import the AdamW optimizer
+
 def train_model(piece_label: str, db: Session):
     model = None
     try:
@@ -158,40 +162,43 @@ def train_model(piece_label: str, db: Session):
         logger.info(f"Found {len(images)} images for piece: {piece_label}")
 
         # Generate a custom dataset for the specific piece
-        piece_data_dir = os.path.join(service_dir, "datasets", piece_label)
+        piece_data_dir = os.path.join(service_dir, "..", "..", "dataset_custom", piece_label)
         os.makedirs(piece_data_dir, exist_ok=True)
 
-        image_dir = os.path.join(piece_data_dir, "images")
-        label_dir = os.path.join(piece_data_dir, "labels")
+        image_dir = os.path.join(piece_data_dir, "images", "valid")
+        image_dir_train = os.path.join(piece_data_dir, "images", "train")
+        label_dir = os.path.join(piece_data_dir, "labels", "valid")
+        label_dir_train = os.path.join(piece_data_dir, "labels", "train")
         os.makedirs(image_dir, exist_ok=True)
         os.makedirs(label_dir, exist_ok=True)
+        os.makedirs(image_dir_train, exist_ok=True)
+        os.makedirs(label_dir_train, exist_ok=True)
 
         # Copy images and labels to the custom dataset directory
         for image in images:
-            shutil.copy(image.file_path, os.path.join(image_dir, os.path.basename(image.file_path)))
-            shutil.copy(image.label_path, os.path.join(label_dir, os.path.basename(image.label_path)))
+            shutil.copy(image.piece_path, os.path.join(image_dir, os.path.basename(image.piece_path)))
+            for annotation in image.annotations:
+                label_path = os.path.join(label_dir, annotation.annotationTXT_name)
+                with open(label_path, "w") as label_file:
+                    label_file.write(f"0 {annotation.x} {annotation.y} {annotation.width} {annotation.height}\n")
 
         # Create a custom data.yaml for this piece
         data_yaml_path = os.path.join(piece_data_dir, "data.yaml")
         with open(data_yaml_path, "w") as yaml_file:
             yaml.dump(
                 {
-                    "train": os.path.join(image_dir),
-                    "val": os.path.join(image_dir),  # Use the same images for simplicity
+                    "train": image_dir_train,
+                    "val": image_dir,  # Use the same images for simplicity
                     "nc": 1,  # Number of classes (only one for this piece)
-                    "names": [piece_label],
+                    "names": {0: piece_label},  # Ensure class index starts from 0
                 },
                 yaml_file,
             )
 
-        # Model save path
-        base_dir_model_save_path = os.path.abspath(os.path.join(service_dir, '..', '..', 'detection'))
-        model_save_path = os.path.join(base_dir_model_save_path, 'models', f"{piece_label}_yolo8l_model.pt")
-
+        model_save_path = os.path.join(service_dir, '..', '..', 'detection', 'models', f"yolo8x_model.pt")
         logger.info(f"Resolved data.yaml path: {data_yaml_path}")
         logger.info(f"Model save path: {model_save_path}")
 
-        # Check if the data.yaml file exists
         if not os.path.isfile(data_yaml_path):
             logger.error(f"data.yaml file not found at {data_yaml_path}")
             return
@@ -201,6 +208,7 @@ def train_model(piece_label: str, db: Session):
 
         # Ensure the model directory exists
         os.makedirs(os.path.dirname(model_save_path), exist_ok=True)
+
         # Rotate and update images for the specific piece
         rotate_and_update_images(piece_label, db)
 
@@ -211,7 +219,7 @@ def train_model(piece_label: str, db: Session):
             model = YOLO(model_save_path)  # Load the pre-trained model for fine-tuning
         else:
             logger.info("No pre-existing model found. Starting training from scratch.")
-            model = YOLO("yolov8l.pt")  # Load a base YOLO model
+            model = YOLO("yolov8x.pt")  # Load a base YOLO model
 
         model.to(device)
         batch_size = adjust_batch_size(device)
@@ -221,38 +229,43 @@ def train_model(piece_label: str, db: Session):
         logger.info(f"Starting fine-tuning for piece: {piece_label}")
         logger.info(f"Using device: {device}, Batch size: {batch_size}")
 
-        # Training parameters and hyperparameter tuning setup
+        # Hyperparameters setup
         hyperparameters = {
-            "optimizer": "AdamW",
             "cos_lr": False,
-            "lr0": 0.01,
+            "lr0": 0.0001,  # Decreased learning rate for finer updates
             "lrf": 0.01,
             "momentum": 0.937,
             "weight_decay": 0.0005,
-            "dropout": 0.0,
-            "warmup_epochs": 3.0,
+            "dropout": 0.2, 
+            "warmup_epochs": 10.0,  # Increased warmup for fine-tuning
             "warmup_momentum": 0.8,
             "warmup_bias_lr": 0.1,
-            "label_smoothing": 0.0,
+            "label_smoothing" : 0.1,
         }
 
+        # Augmentation parameters (Mosaic and Mixup)
         augmentations = {
-            "hsv_h": 0.015,
-            "hsv_s": 0.7,
-            "hsv_v": 0.4,
-            "degrees": 0.0,
-            "translate": 0.1,
-            "scale": 0.5,
+            "hsv_h": 0.015,  
+            "hsv_s": 0.7,  
+            "hsv_v": 0.4,  
+            "degrees": 10.0,  # Increase rotation degree for better variance
+            "translate": 0.2,  # Increase translation range
+            "scale": 0.3,  # Slightly higher scaling to improve generalization
             "shear": 0.0,
             "perspective": 0.0,
             "flipud": 0.0,
-            "fliplr": 0.0,
-            "mosaic": 1.0,
-            "mixup": 0.0,
+            "fliplr": 0.7,  # Increase horizontal flip probability
+            "mosaic": 0.7,  # Increase mosaic strength
+            "mixup": 0.1,  # Consider adding mixup for even better generalization
             "copy_paste": 0.0,
-            "erasing": 0.4,
+            "erasing": 0.5,  # Increase image erasing to reduce overfitting
             "crop_fraction": 1.0,
         }
+
+        # Merge augmentations into hyperparameters
+        hyperparameters.update(augmentations)
+
+        # Set the optimizer object
 
         # Fine-tuning loop
         for epoch in range(50):
@@ -260,21 +273,39 @@ def train_model(piece_label: str, db: Session):
                 logger.info("Stop event detected. Ending training.")
                 break
 
+            # Start the training process
             model.train(
                 data=data_yaml_path,
                 epochs=1,
                 imgsz=640,
                 batch=batch_size,
                 device=device,
+                project=os.path.dirname(model_save_path),
+                name=piece_label,
+                exist_ok=True,
                 amp=True,
                 patience=10,
-                augmentations=augmentations,
+                augment=True,  # Ensure augmentation is enabled
                 **hyperparameters
             )
+            
+            # Validate the model periodically during training to monitor metrics
+            if epoch % 5 == 0:  # Every 5 epochs, check validation performance
+                validation_results = model.val(
+                    data=data_yaml_path,
+                    imgsz=640,
+                    batch=batch_size,
+                    device=device,
+                )
 
-            # Save model periodically
-            model.save(model_save_path)
-            logger.info(f"Model saved to {model_save_path} after epoch {epoch + 1}")
+                logger.info(f"Validation results after epoch {epoch + 1}: {validation_results}")
+
+            # Save the model periodically
+            if epoch % 1 == 0:  # Save model after every epoch
+                model.save(model_save_path)
+                logger.info(f"Checkpoint saved to {model_save_path} after epoch {epoch + 1}")
+
+            logger.info(f"Results after epoch {epoch + 1}")
 
         logger.info(f"Model fine-tuning complete for piece: {piece_label}. Final model saved to {model_save_path}")
 
@@ -295,3 +326,4 @@ def train_model(piece_label: str, db: Session):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
         logger.info("Fine-tuning process finished.")
+

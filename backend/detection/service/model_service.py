@@ -9,7 +9,7 @@ def load_model(piece_label: str):
     
     # Adjust the model directory path
     model_dir = os.path.join(script_dir, '..', 'models')
-    model_path = os.path.join(model_dir, f'yolo8l_{piece_label}.pt')
+    model_path = os.path.join(model_dir, f'yolo8x_{piece_label}.pt')
 
     print(f"Script directory: {script_dir}")
     print(f"Model directory: {model_dir}")

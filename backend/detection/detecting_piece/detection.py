@@ -11,7 +11,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model = YOLO('backend/detection/models/yolo8x_model.pt').to(device)
 
 # Load the image
-image_path = 'C:\\Users\\hp\\Desktop\\Airbus\\detectionSystemAirbus\\backend\\dataset_custom\\G053.42874.105.03\\images\\train\\G053.42874.105.03_1_flip0.jpg'
+image_path = 'C:\\Users\\hp\\Desktop\\Airbus/1.bmp'
 
 image = cv2.imread(image_path)
 
@@ -23,8 +23,8 @@ if image is None:
 
 
 # Define class names and colors
-class_names = ['G053.45622.103.03', 'G053.42874.105.03']
-colors = [(0, 255, 0), (255, 255, 0)]  # Green and blue colors for bounding boxes
+class_names = ['G053.42874.105.03','G053.45622.103.03','G053.47684.101.03','E539.15264.002.00','E539.15264.000.00']
+colors = [(0, 255, 0),(255, 0, 0),(255, 0, 0),(255, 0, 0),(255, 0, 0)]  # Green and blue colors for bounding boxes
 
 # Set the confidence threshold
 confidence_threshold = 0.2  # Adjusted for better balance
