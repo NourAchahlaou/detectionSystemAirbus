@@ -16,6 +16,8 @@ import time
 from database.inspection.InspectionImage import InspectionImage
 import os
 from datetime import datetime
+from pypylon import pylon
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,
@@ -40,8 +42,24 @@ async def load_model_once():
         detection_system = DetectionSystem()
         detection_system.get_my_model()  # Load the model once
 
+@router.get("/load_model")
+async def load_model_endpoint():
+    """Endpoint to load the model once when the inspection page is accessed."""
+    try:
+        await load_model_once()
+        return {"message": "Model loaded successfully."}
+    except Exception as e:
+        logging.error(f"Error loading model: {e}")
+        raise HTTPException(status_code=500, detail=f"An error occurred while loading the model: {e}")
+       
+def resize_frame(frame: np.ndarray) -> np.ndarray:
+    # Resize frame to the nearest size divisible by 32
+    height, width = frame.shape[:2]
+    new_height = (height // 32) * 32
+    new_width = (width // 32) * 32
+    return cv2.resize(frame, (new_width, new_height))
 
-async def process_frame(frame: np.ndarray, target_label: str):
+async def process_frame_async(frame: np.ndarray, target_label: str):
     """Asynchronously process a single frame to perform detection and contouring."""
     try:
         detection_results = detection_system.detect_and_contour(frame, target_label)
@@ -63,6 +81,46 @@ async def process_frame(frame: np.ndarray, target_label: str):
         return frame, False, 0
 
 
+async def capture_and_process_frame(camera_id: int, target_label: str, frame_counter: int, object_detected: bool, detection_time: float) -> np.ndarray:
+    """Capture and process a frame asynchronously."""
+    frame = None
+    if frame_source.camera_is_running:
+        logging.debug("Camera is running.")
+        
+        if frame_source.type == "regular":
+            frame = frame_source.frame()
+        elif frame_source.type == "basler":
+            if frame_source.basler_camera.IsGrabbing():
+                grab_result = frame_source.basler_camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
+                if grab_result.GrabSucceeded():
+                    frame = frame_source.converter.Convert(grab_result).GetArray()
+                grab_result.Release()
+
+        if frame is None:
+            logging.debug("No frame captured.")
+            return None, object_detected, detection_time
+
+        # Resize the frame to 480x640
+        frame=cv2.resize(frame, (640, 480))
+
+        if frame_counter % 1 == 0:  # Process every 5 frames
+            if isinstance(frame, np.ndarray) and frame.ndim == 3 and frame.dtype == np.uint8:
+                processed_frame, detected_target, non_target_count = await process_frame_async(frame, target_label)
+
+                if non_target_count > 0:
+                    logging.error(f"Detected {non_target_count} pieces that do not belong.")
+                
+                if detected_target:
+                    object_detected = True
+                    detection_time = time.time()
+
+                return processed_frame, object_detected, detection_time
+            else:
+                logging.error("Captured frame is not a valid NumPy array.")
+                return None, object_detected, detection_time
+    return None, object_detected, detection_time
+
+
 async def generate_frames(camera_id: int, target_label: str, db: Session) -> AsyncGenerator[bytes, None]:
     """Generate video frames asynchronously and perform detection on them."""
     frame_source.start(camera_id, db)
@@ -72,65 +130,38 @@ async def generate_frames(camera_id: int, target_label: str, db: Session) -> Asy
     object_detected = False  # To track whether an object has been detected
 
     frame_counter = 0
-    process_interval = 5  # Process every 5 frames
-    
+
     try:
         while not stop_event.is_set():
             logging.debug("Stop event not set, continuing loop.")
-            if frame_source.camera_is_running:
-                logging.debug("Camera is running.")
-                frame = frame_source.frame()
-                if frame is None:
-                    logging.debug("No frame captured.")
-                    await asyncio.sleep(0)  # Yield control to the event loop
+            frame, object_detected, detection_time = await capture_and_process_frame(camera_id, target_label, frame_counter, object_detected, detection_time)
+
+            if frame is None:
+                logging.debug("No valid frame processed.")
+                await asyncio.sleep(0)  # Yield control to the event loop
+                continue
+
+            if frame.shape[2] == 3:  # Check if the frame is in BGR format
+                _, buffer = cv2.imencode('.jpg', frame)
+                if not _:
+                    logging.error("Failed to encode frame.")
                     continue
 
-                # Process only every N frames to reduce load
-                if frame_counter % process_interval == 0:
-                    if not isinstance(frame, np.ndarray):
-                        logging.error("Captured frame is not a NumPy array.")
-                        continue
+                frame_bytes = buffer.tobytes()
+                yield (b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
-                    if frame.ndim != 3 or frame.dtype != np.uint8:
-                        logging.error(f"Frame dimensions or data type are incorrect. Dimensions: {frame.ndim}, Data type: {frame.dtype}")
-                        continue
+            frame_counter += 1
 
-                    processed_frame, detected_target, non_target_count = await process_frame(frame, target_label)
-
-                    if non_target_count > 0:
-                        logging.error(f"Detected {non_target_count} pieces that do not belong.")
-                    
-                    if detected_target:
-                        object_detected = True
-                        detection_time = time.time()
-                    
-                    if processed_frame.shape[2] == 3:
-                        _, buffer = cv2.imencode('.jpg', processed_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
-                        if not _:
-                            logging.error("Failed to encode frame.")
-                            continue
-
-                        image_stream = io.BytesIO(buffer)
-                        yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n\r\n' + image_stream.getvalue() + b'\r\n')
-                    else:
-                        logging.error("Processed frame is not in BGR format.")
-                    
-                frame_counter += 1
-
-                # Timeout logic if no object is detected
-                if time.time() - detection_time > timeout_duration and not object_detected:
-                    logging.debug("Timeout reached without object detection, stopping.")
-                    break
-            else:
-                logging.debug("Camera is not running.")
+            # Timeout logic if no object is detected
+            if time.time() - detection_time > timeout_duration and not object_detected:
+                logging.debug("Timeout reached without object detection, stopping.")
                 break
 
             await asyncio.sleep(0)  # Yield control to the event loop
 
     finally:
         logging.debug("Stopping frame source.")
-        stop_video()
         stop_event.clear()  # Clear the event for the next use
         frame_source.stop()
         logging.debug("Stop event cleared.")
@@ -138,10 +169,10 @@ async def generate_frames(camera_id: int, target_label: str, db: Session) -> Asy
 
 @router.get("/video_feed")
 async def video_feed(camera_id: int, target_label: str, db: Session = Depends(get_db)):
+    """Endpoint to start the video feed and detect objects."""
     # Ensure the model is loaded once before generating frames
-    await load_model_once()
+    
     return StreamingResponse(generate_frames(camera_id, target_label, db), media_type='multipart/x-mixed-replace; boundary=frame')
-
 
 def stop_video():
     """Stop video streaming."""

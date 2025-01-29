@@ -7,7 +7,7 @@ from fastapi import HTTPException, logger
 from sqlalchemy.orm import Session
 import yaml
 import shutil
-from services.rotation_service import rotate_and_save_images_and_annotations
+from services.rotation_services import rotate_and_save_images_and_annotations
 from database.piece.annotation import Annotation
 from database.piece.piece import Piece
 from database.piece.piece_image import PieceImage

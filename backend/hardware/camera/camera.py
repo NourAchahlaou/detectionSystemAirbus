@@ -6,7 +6,7 @@ from sqlalchemy import func
 from typing import Dict, Generator, List, Optional, Tuple
 import cv2
 from fastapi import HTTPException
-
+import numpy as np
 from sqlalchemy.orm import Session
 from api.camera.models.camera_settings import UpdateCameraSettings
 
@@ -365,33 +365,58 @@ class FrameSource:
         return enhanced_frame
 
 
+    # def _gpu_encode_frame(self, frame: np.ndarray) -> bytes:
+    #     """
+    #     GPU-accelerated frame encoding using OpenCV's CUDA functions.
+    #     """
+    #     # Convert the frame to GPU memory (if it's not already in GPU memory)
+    #     frame_gpu = cv2.cuda_GpuMat()
+    #     frame_gpu.upload(frame)
+
+    #     # Perform any GPU-based processing, like resizing or converting formats
+    #     frame_resized = cv2.cuda.resize(frame_gpu, (640, 480))  # Example resizing operation
+
+    #     # Download the processed frame back to CPU memory
+    #     frame_resized_cpu = frame_resized.download()
+
+    #     # Encode the frame
+    #     _, buffer = cv2.imencode('.jpg', frame_resized_cpu, [cv2.IMWRITE_JPEG_QUALITY, 90])
+    #     return buffer.tobytes()
+
     def generate_frames(self) -> Generator[bytes, None, None]:
         assert self.camera_is_running, "Start the camera first by calling the start() method"
+        if self.type == "basler" and not hasattr(self, 'converter'):
+            raise AttributeError("Converter is not initialized for Basler camera")
+
         while self.camera_is_running:
-            if self.type == "regular":
-                success, frame = self.capture.read()
-                if not success:
-                    break
-                _, buffer = cv2.imencode('.jpg', frame)
-                frame_bytes = buffer.tobytes()
-                yield (b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-            elif self.type == "basler":
-                if not hasattr(self, 'converter'):
-                    raise AttributeError("Converter is not initialized for Basler camera")
-                
-                if self.basler_camera and self.basler_camera.IsGrabbing():
-                    grab_result = self.basler_camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
-                    if grab_result.GrabSucceeded():
-                        image = self.converter.Convert(grab_result)
-                        frame = image.GetArray()
-                        _, buffer = cv2.imencode('.jpg', frame)
-                        yield (b'--frame\r\n'
-                            b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-                    grab_result.Release()
-                else:
-                    break
-    
+            try:
+                if self.type == "regular":
+                    success, frame = self.capture.read()
+                    if not success:
+                        break
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                    frame_bytes = buffer.tobytes()
+                    yield (b'--frame\r\n'
+                        b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+
+                elif self.type == "basler":
+                    if self.basler_camera and self.basler_camera.IsGrabbing():
+                        grab_result = self.basler_camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
+                        if grab_result.GrabSucceeded():
+                            frame = self.converter.Convert(grab_result).GetArray()
+                            
+                            # Optional: Add threading/multiprocessing for encoding
+                            _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                            frame_bytes = buffer.tobytes()
+                            
+                            yield (b'--frame\r\n'
+                                b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                        grab_result.Release()
+                    else:
+                        break
+            except Exception as e:
+                print(f"Error during frame generation: {e}")
+                break
     
 # !TODO : change the timestamps into a counter 
 #didn't use this 
@@ -452,41 +477,62 @@ class FrameSource:
         print("Photo of the piece is registered successfully!")
         return frame
     
-#instead of next_frame i used this 
+    #instead of next_frame i used this 
     def capture_images(self, save_folder: str, url: str, piece_label: str):
+        """
+        Captures an image from the camera, resizes it to 1920x1152, and saves it with the specified naming format.
+        """
         assert self.camera_is_running, "Start the camera first by calling the start() method"
-        if self.type == "regular" :
+
+        # Check if the camera is regular or Basler
+        if self.type == "regular":
             success, frame = self.capture.read()
             if not success:
                 raise SystemError("Failed to capture a frame")
 
-            # Resize the frame if needed
-            frame = cv2.resize(frame, (1000, 750))
-
-            # Generate a filename based on the current time
-            timestamp = datetime.now()
-            image_count = len(self.temp_photos) + 1  # Get the current image count
-            image_name = f"{piece_label}_{image_count}.jpg"  # Use the required naming format
-            file_path = os.path.join(save_folder, image_name)
-            photo_url = os.path.join(url, image_name) 
-
-            # Save the frame as an image file
-            cv2.imwrite(file_path, frame)
-
-            # Store the captured photo in a temporary list
-            self.temp_photos.append({
-                'piece_label': piece_label,
-                'file_path': file_path,
-                'timestamp': timestamp,
-                'url': photo_url,
-                'image_name': image_name
-            })
-
-            if len(self.temp_photos) > 10:
-                raise SystemError("Already 10 pictures captured.")
+        elif self.type == "basler":
+            if not self.basler_camera.IsGrabbing():
+                raise SystemError("Basler camera is not grabbing frames.")
             
-            print(f"Captured {len(self.temp_photos)} photo(s) so far.")
-            return frame
+            grab_result = self.basler_camera.RetrieveResult(1000, pylon.TimeoutHandling_ThrowException)
+            if not grab_result.GrabSucceeded():
+                raise SystemError("Failed to grab a frame from Basler camera.")
+            
+            # Convert the Basler grab result to a frame
+            frame = self.converter.Convert(grab_result).GetArray()
+            grab_result.Release()
+
+        else:
+            raise ValueError("Unsupported camera type for image capture")
+
+        # Resize the frame to 1920x1152
+        frame = cv2.resize(frame, (1920, 1152))
+
+        # Generate a filename based on the current time
+        timestamp = datetime.now()
+        image_count = len(self.temp_photos) + 1  # Get the current image count
+        image_name = f"{piece_label}_{image_count}.jpg"  # Use the required naming format
+        file_path = os.path.join(save_folder, image_name)
+        photo_url = os.path.join(url, image_name)
+
+        # Save the frame as an image file
+        cv2.imwrite(file_path, frame)
+
+        # Store the captured photo in a temporary list
+        self.temp_photos.append({
+            'piece_label': piece_label,
+            'file_path': file_path,
+            'timestamp': timestamp,
+            'url': photo_url,
+            'image_name': image_name
+        })
+
+        # Limit the number of captured photos to 10
+        if len(self.temp_photos) > 10:
+            raise SystemError("Already 10 pictures captured.")
+        
+        print(f"Captured {len(self.temp_photos)} photo(s) so far.")
+        return frame
 
     def cleanup_temp_photos(self):
         for photo in self.temp_photos:

@@ -53,9 +53,9 @@ const routes = [
       { 
         path: "/inspections/checkpieces", 
         element: (
-          <RoleGuard allowedRoles={[2]}>
+         
             <AppInspection />
-          </RoleGuard>
+          
         ) 
       },
 

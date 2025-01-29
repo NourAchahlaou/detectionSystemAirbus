@@ -141,11 +141,11 @@ def rotate_and_save_images_and_annotations(piece_label: str, rotation_angles: li
 
             # Apply the augmentations (same for all transformations)
             augmented_images = [
-                apply_greyscale(image, 0.5),
-                apply_occlusion(image, 0.5),
+                #apply_greyscale(image, 0.5),
+                #apply_occlusion(image, 0.5),
                 add_noise(image),
-                adjust_brightness_contrast(image),
-                scale_image(image)
+                #adjust_brightness_contrast(image),
+                #scale_image(image) #scale is not working
             ]
 
             for angle in rotation_angles:

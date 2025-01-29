@@ -260,7 +260,7 @@ def train_model(piece_label: str, db: Session):
         # Set the optimizer object
 
         # Fine-tuning loop
-        for epoch in range(25):
+        for epoch in range(5):
             if stop_event.is_set():
                 logger.info("Stop event detected. Ending training.")
                 break

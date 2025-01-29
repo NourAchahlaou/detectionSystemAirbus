@@ -119,14 +119,25 @@ export default function AppInspection() {
   }, [token]);
 
   useEffect(() => {
-    axios.get('http://127.0.0.1:8000/cameras/get_allcameras/')
-      .then(response => {
-        setCameras(response.data);
-      })
-      .catch(error => {
-        console.error('There was an error fetching the camera data!', error);
-      });
-  }, []);
+    const fetchData = async () => {
+        try {
+            // Load the model
+            const modelResponse = await axios.get("http://127.0.0.1:8000/detection/load_model");
+            console.log(modelResponse.data.message); // Model loaded successfully
+
+            // Fetch camera data
+            const cameraResponse = await axios.get("http://127.0.0.1:8000/cameras/get_allcameras/");
+            setCameras(cameraResponse.data);
+        } catch (err) {
+            console.error("Error occurred:", err);
+            setError("Failed to load data.");
+        } finally {
+            setLoading(false); // Set loading to false after both calls
+        }
+    };
+
+    fetchData(); // Call the async function
+}, []);
 
   if (loading) return <p style={styles.loading}>Loading...</p>;
   if (error) return <p style={styles.error}>{error}</p>;
@@ -148,6 +159,9 @@ export default function AppInspection() {
   const stopCameraFeed = async () => {
     try {
       await axios.post('http://127.0.0.1:8000/detection/stop_camera_feed/');
+      await fetch("http://127.0.0.1:8000/cameras/cleanup-temp-photos", {
+        method: "POST",
+      });
       setIsCameraStarted(false);
     } catch (error) {
       console.error('There was an error stopping the camera feed!', error);
@@ -174,7 +188,9 @@ export default function AppInspection() {
 
   const handleStopCamera = () => {
     stopCameraFeed();
+    window.location.reload(); // Reload the page
   };
+  
 
   const handleTargetLabelChange = (event) => {
     setTargetLabel(event.target.value);

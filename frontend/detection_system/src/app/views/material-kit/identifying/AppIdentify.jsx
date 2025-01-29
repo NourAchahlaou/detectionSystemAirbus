@@ -69,11 +69,15 @@ export default function AppIdentify() {
   const stopCameraFeed = async () => {
     try {
       await axios.post('http://127.0.0.1:8000/identify/stop_camera_identify_feed/');
+      await fetch("http://127.0.0.1:8000/cameras/cleanup-temp-photos", {
+        method: "POST",
+      });
       setIsCameraStarted(false);
     } catch (error) {
       console.error('There was an error stopping the camera feed!', error);
     }
   };
+
 
   const handleStopCamera = () => {
     stopCameraFeed();
